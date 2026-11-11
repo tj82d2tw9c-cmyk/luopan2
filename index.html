@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="5V02MBPz7gwZonLcOSeK7u">
+<head data-page-node-id="xNr24aBOSGNFmpFEjnpN1Y">
+<meta charset="UTF-8" data-page-node-id="vYr3R0FkajzzddasPIHDG4">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" data-page-node-id="Rpc2VDO98a4aCVj8dPtTZg">
+<meta name="theme-color" content="#EFC9C2">
+<title>罗盘 · 知乎短篇创作台</title>
+<link rel="icon" type="image/svg+xml" href="./assets/icon.svg" data-page-node-id="KXHAH1hGyX4wcF6GUYgUQd">
+<link rel="stylesheet" href="style.css" data-page-node-id="pIzFEO9MRNaVjacB9zQQ2G">
+</head>
+<body data-page-node-id="E6Y5XjwvlVgqgcNgxBdnPF">
+
+<!-- ================= 背景（樱花庭院壁纸，由原图衍生） ================= -->
+<div class="wallpaper" aria-hidden="true" data-page-node-id="l6lqP4D12CUgHP9dHaForA">
+  <div class="wp-hero" data-page-node-id="QuuonBLpT6CuyZ4DE4kSRH"></div>
+  <div class="wp-fade" data-page-node-id="BQ636X82TuzaSwHCZqA9dL"></div>
+  <div class="wp-veil" data-page-node-id="nqvRQpTMewVufYnWvMdSDI"></div>
+  <div class="wp-grain" data-page-node-id="9d2TTbRwfyvdcXGxO5khXv"></div>
+</div>
+
+<!-- ================= 顶部状态条 ================= -->
+<header class="topbar" data-page-node-id="BPlsEXhEBTbMXSRIom6UYC">
+  <div class="tb-left" data-page-node-id="pISY2I6MjFsbhOcyqH4NBl">
+    <span class="tb-time" id="tbTime" data-page-node-id="viDEBfkdY4TwPkaGKpGThA">00:00</span>
+    <span class="tb-date" id="tbDate" data-page-node-id="C6iIwE1XdCjjgFtrE3syd2">11月11日 周三</span>
+  </div>
+  <div class="tb-mid" data-page-node-id="a1Gfi4sFJZNvbbnD1mtKwN">
+    <div class="tb-search" id="globalSearch" data-page-node-id="z1dI6v7YHwO0tzPsV2gz5L">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="gkKEq6g8XCcR5yb7zbZoVW"><circle cx="11" cy="11" r="7" data-page-node-id="PHoijTrFRvC6o0rjYHYmVT"/><path d="m20 20-3.5-3.5" data-page-node-id="DtYrEdjXYTiW4BnwvP95zh"/></svg>
+      <input id="globalSearchInput" placeholder="搜索榜单、导语池、角色名…" autocomplete="off" data-page-node-id="bX8dCVrTbfe24zxPYapzmY">
+      <kbd data-page-node-id="HpEaAgze7Sq2fi0APcGEnt">⌘K</kbd>
+    </div>
+  </div>
+  <div class="tb-right" data-page-node-id="oRb9E2nHlHejYiqnkXSCz5">
+    <button class="tb-chip" id="refreshAll" title="刷新知乎数据" data-page-node-id="cxr4UQ8Ok17Yz7SW8obCoo">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="tmGdJAWiG1fbE2TlvwV7YS"><path d="M21 12a9 9 0 1 1-2.6-6.4" data-page-node-id="VcUrMHewNQ0dWMbXDAdQ3d"/><path d="M21 3v6h-6" data-page-node-id="L8Jch6vPNBkTzxlZxAxPLi"/></svg>
+      <span data-page-node-id="5c4DwHpzJqXiFME7gdKXmZ">刷新</span>
+    </button>
+    <div class="tb-avatar" data-page-node-id="3vLcBE0ps3hQNt7QfpgoRy">罗</div>
+  </div>
+</header>
+
+<!-- ================= 桌面（首页 App 网格 + 小组件） ================= -->
+<main class="desktop" id="desktop" data-page-node-id="KxYiW5yqoud67CdI2XUFnr">
+  <!-- 左：小组件列 -->
+  <section class="widgets" data-page-node-id="iAl3TDOwvCtcDNQI9Pgyjf">
+    <div class="widget widget-2x2 widget-hero" data-page-node-id="OXBv7uX1pO3NagtLQNevQK">
+      <div class="w-head" data-page-node-id="z4Drw8CF6SZKpPv4ndcfHY"><span class="w-label" data-page-node-id="735eNRuAmricRlttfAAReB">今日罗盘</span><span class="w-time" id="wTime" data-page-node-id="9fO0udE1ERruoHWAUDzNYE">--:--</span></div>
+      <div class="w-hero-main" data-page-node-id="6niZ9QXoDHNVvG8jsV3Lqf">
+        <div class="w-hero-num" id="wCount" data-page-node-id="kvIS0i5bFLWMkzNu0VaTAp">0</div>
+        <div class="w-hero-sub" data-page-node-id="BSYhDEot0WHuZjqmqFWn0k">条知乎短篇 · 已收录</div>
+      </div>
+      <div class="w-hero-bar" data-page-node-id="JCwHezDD1jVe6QHH5byBJm"><i id="wBar" data-page-node-id="HEKoK0ou4G4tfZZ67fUBij"></i></div>
+      <div class="w-foot" id="wUpdated" data-page-node-id="8ZIla2VHQjzE5q2mDfWREg">等待同步知乎数据</div>
+    </div>
+
+    <div class="widget widget-2x2 widget-trend" data-page-node-id="KDZJOudTc804veR9dSsX0Y">
+      <div class="w-head" data-page-node-id="GOaaRoytTHbYcPIJIYTBMv"><span class="w-label" id="wTrendHead" data-page-node-id="53T58KhIRGrBd3KbXWYobc">盐选·热度榜 Top5</span><span class="w-more" data-open="rank" data-page-node-id="TThC02lWuECxhirrseENk3">全部 ›</span></div>
+      <div class="w-list" id="wTrend" data-page-node-id="lwd5AZiTtNhMG3DefSriTA">
+        <div class="w-skeleton" data-page-node-id="jEbbc6aIejzTg0LKIsDyGn"></div><div class="w-skeleton" data-page-node-id="7oXkVRYIakKpMwOzFQQfts"></div><div class="w-skeleton" data-page-node-id="rN5VOggcJDYcnwUp70Qjzi"></div>
+      </div>
+    </div>
+
+    <div class="widget widget-1x2 widget-stat" data-page-node-id="7vkF1y8yMDBVOy0D8Vgg1e">
+      <div class="w-head" data-page-node-id="WtRZcf58wn6Ng87jkDYBmu"><span class="w-label" data-page-node-id="haEDm0uVLeb62nH53EuXE7">我的池子</span></div>
+      <div class="stat-stack" data-page-node-id="42m7wV6F4aBKqHgHGxBzIN">
+        <div class="ss-item" data-page-node-id="FloeODR9lia2B2VsACN3xZ"><b id="stPool" data-page-node-id="DGsSpu7tLc8PqirV0ctn9L">0</b><span data-page-node-id="lKuw74FDQ5HfZx1XsyzEre">导语</span></div>
+        <div class="ss-item" data-page-node-id="8i9FFv4JX4OOCBsSyFXT6L"><b id="stDone" data-page-node-id="xfeGEEFWduNu8lqxMsiwA3">0</b><span data-page-node-id="nNJ9ZHSfySHFu2dIsmqqNA">已用</span></div>
+        <div class="ss-item" data-page-node-id="bCBAWXNK56AV7p4PSrVAV5"><b id="stCards" data-page-node-id="Ee3wAg0WsZalWHPL5GGKbt">0</b><span data-page-node-id="uEy57JfbQOXcqd1AV0r4UM">抽卡</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 右：App 图标网格 -->
+  <section class="appgrid-wrap" data-page-node-id="ZHCCUaHAbMOFgYrDVJPTUi">
+    <div class="appgrid" data-page-node-id="hbFsg9E9UiPryDBWDLKiYU">
+      <button class="app" data-open="rank" data-page-node-id="luI8TNn2vTJdZoj5onqvGY">
+        <span class="app-ico ico-rank" data-page-node-id="oxo548iSSbqXh1FDWC3cZr">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" data-page-node-id="nVVrm9ayYRThvMo3nFtyLd"><path d="M4 19V10M10 19V5M16 19v-6M22 19H2" data-page-node-id="dt7THjSgbvjBj8wMg24p5H"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="rLXCBrBhbmHBdp0wXTNOkY">短篇榜单</span>
+      </button>
+      <button class="app" data-open="cards" data-page-node-id="abusKnQGClR44EMLpzR31U">
+        <span class="app-ico ico-cards" data-page-node-id="DfkEuq5L0BcsXCuHgNJGJF">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="5Sr1SADlacOANe8I4pVJQL"><rect x="7" y="3.5" width="10" height="17" rx="2.2" data-page-node-id="4Z9Bi2cZHOsBdyGnnfD2DB"/><path d="M4 7v10M20 7v10" data-page-node-id="4B75VUnnTS2gYNQD3vMzoI"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="matiqXCfEdWDhnWPaZJy6W">随机抽卡</span>
+      </button>
+      <button class="app" data-open="pool" data-page-node-id="hSm3f27CjBiOEhfHCIBPb2">
+        <span class="app-ico ico-pool" data-page-node-id="TfHKaox84FB6c1bM36xGQR">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" data-page-node-id="uHp2D8EC8HJCQVHBhnlin4"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" data-page-node-id="213Y8dAV5EZN2ApYcFAHe8"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="LSmbkYyeV5dsIzESSzIwD4">导语池</span>
+      </button>
+      <button class="app" data-open="studio" data-page-node-id="H4c1DAMdfIuxwqwO9n8Y3I">
+        <span class="app-ico ico-studio" data-page-node-id="tCKdLbFfGDcD7M0re0Sque">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="Edpkuedjw2WmkjcBxHsYAu"><rect x="3" y="3" width="18" height="18" rx="3" data-page-node-id="kvI8OOB6eyDXPJvXfPXHoK"/><circle cx="8.5" cy="8.5" r="1.5" data-page-node-id="RnoiOs1C79XGSOczMFj3A2"/><path d="m21 15-5-5L5 21" data-page-node-id="MALZBnX7YBh2cZExnT1chk"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="DSaduKuSzTQC2m9jSDBfjX">制图工坊</span>
+      </button>
+      <button class="app" data-open="names" data-page-node-id="ETUWpHYlMOqfXkAjwMY8l8">
+        <span class="app-ico ico-names" data-page-node-id="A7kIvc1sTb2j4eTRgQ4XcV">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="BdDv6qEwJiRAmBgUW71I7M"><circle cx="12" cy="8" r="4" data-page-node-id="ybHFDmgTlidSh4V2Vm2rTY"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" data-page-node-id="GvSwaWpadkslyWUHqOYFt4"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="pibkyKVgB6qdCW0Y8bu1qz">起名助手</span>
+      </button>
+      <button class="app" data-open="analyze" data-page-node-id="hcdp3s8K31cmCrM22DKD93">
+        <span class="app-ico ico-analyze" data-page-node-id="SdaMqP2tz7o4KjxKERFmiB">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="qrHxCTLA6gW9AHZdNIpFHa"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M3 12h18" data-page-node-id="i4M5XkdSITfPKmjY9LGKdy"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="GFWxwyavAw8ALhWFHNiWvC">拆文助手</span>
+      </button>
+      <button class="app" data-open="settings" data-page-node-id="2XyVCUCUDz3FZdiB1QYMYV">
+        <span class="app-ico ico-settings" data-page-node-id="toj0AUVLAihxetguXy4SjA">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="yg6mHjDBEAx24hds5e4BDk"><circle cx="12" cy="12" r="3" data-page-node-id="ZJ2yJF6xqjWAYtIFTLq9nz"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" data-page-node-id="hzjPFwNP1GxCtFzFEVTrkj"/></svg>
+        </span>
+        <span class="app-name" data-page-node-id="lG3ACwrFJhx5KdvBkwc4bB">数据设置</span>
+      </button>
+    </div>
+  </section>
+</main>
+
+<!-- ================= 应用窗口层 ================= -->
+<div class="stage" id="stage" data-page-node-id="2e26Zki0SpX0DTeziA699u">
+  <div class="win" id="win" data-page-node-id="t0cON29PVGktysvfXSLLex">
+    <div class="win-bar" data-page-node-id="LQM84xsWrkdmudlX60ayC6">
+      <div class="traffic" data-page-node-id="ZDFWol0Ivy6TkrncAHe3cU">
+        <i class="t-close" data-close data-page-node-id="4kvRmvPyI62ESSPfWrPCYu"></i><i class="t-min" data-page-node-id="Y1HuWwkHDtnXGinGUiyw4L"></i><i class="t-max" data-page-node-id="ilmbpPENAn3zvc49RpAhiv"></i>
+      </div>
+      <div class="win-title" id="winTitle" data-page-node-id="BaOetOySTRFRpjcwo2wrCQ">短篇榜单</div>
+      <div class="win-actions" id="winActions" data-page-node-id="P7XKlu7ahFcyhvHloVTTPS"></div>
+    </div>
+    <div class="win-body" id="winBody" data-page-node-id="QG8YKctSkgbC2JVnhPiEyE"></div>
+  </div>
+</div>
+
+<!-- ================= Dock ================= -->
+<nav class="dock" data-page-node-id="f42qD35NL4bWxlWAj9vrTm">
+  <button class="dock-app" data-open="rank" title="短篇榜单" data-page-node-id="nbZECpI1sBkARG0aUpoQua"><span class="app-ico ico-rank" data-page-node-id="4rI38x6cvEGgs1c9wxb90m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" data-page-node-id="WBLI4d0WCWYVl59Pi5nrkh"><path d="M4 19V10M10 19V5M16 19v-6M22 19H2" data-page-node-id="GomKxSEe7spoX54soqLa7G"/></svg></span></button>
+  <button class="dock-app" data-open="cards" title="随机抽卡" data-page-node-id="MciVXVHhqjB1YFD5pEUmB5"><span class="app-ico ico-cards" data-page-node-id="vvIR4802shCNEmZxc5bj7w"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" data-page-node-id="f40BYOMLfaphrWxxL4zJMg"><rect x="7" y="3.5" width="10" height="17" rx="2.2" data-page-node-id="JtvtP60RELD9bhTaenIMxJ"/><path d="M4 7v10M20 7v10" data-page-node-id="tfHMqPqy8TqzRuqyhS8aNM"/></svg></span></button>
+  <button class="dock-app" data-open="pool" title="导语池" data-page-node-id="kBRBwoCQdlapyzgti2hefZ"><span class="app-ico ico-pool" data-page-node-id="bAHenBF4tAr8KZ2lypcYxo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" data-page-node-id="UYU3CFlCCJJB7TSz57bp1j"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" data-page-node-id="1u4x7n2GrQiOwTnh9KzoSU"/></svg></span></button>
+  <span class="dock-sep" data-page-node-id="fo1hrSIA6VpbLjvs77I3wI"></span>
+  <button class="dock-app" data-open="studio" title="制图工坊" data-page-node-id="2S37TqDGLCai4sWNvyG7tv"><span class="app-ico ico-studio" data-page-node-id="4yGD7QGg24a8MInS96FOKT"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="sJVOkAApzIVCXYHpb5KfVl"><rect x="3" y="3" width="18" height="18" rx="3" data-page-node-id="gfO7axYwt9x7FQK3M4kWy5"/><circle cx="8.5" cy="8.5" r="1.5" data-page-node-id="9UkkGYtD1kFuEwLTWwOGS4"/><path d="m21 15-5-5L5 21" data-page-node-id="WLjUDD1ZxYm9cKZe53X55t"/></svg></span></button>
+  <button class="dock-app" data-open="names" title="起名助手" data-page-node-id="aNUDzGmdOt0s3wM2zWn5lc"><span class="app-ico ico-names" data-page-node-id="wYTFVP12IWgCahpYEdisGi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-page-node-id="6Bq4CHMbFan7Wvd2ssBDi8"><circle cx="12" cy="8" r="4" data-page-node-id="q91gdR31MOfiZNfTOvb56G"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" data-page-node-id="jW5r45aEsriR8FxzCJOZak"/></svg></span></button>
+  <button class="dock-app" data-open="analyze" title="拆文助手" data-page-node-id="313tdZHs0vOLMLznetQYRx"><span class="app-ico ico-analyze" data-page-node-id="Qr4qn9OvdCQdc2PhDoiOzW"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="pJ4CXiA4MBCusjtVq5ir1a"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M3 12h18" data-page-node-id="nFQzth4GtWLOi02t0GKJif"/></svg></span></button>
+  <span class="dock-sep" data-page-node-id="8k1huE7IPzkoWL8zVvIuUr"></span>
+  <button class="dock-app" data-open="settings" title="数据设置" data-page-node-id="JPWM43ekRTOiKHhcugIUXI"><span class="app-ico ico-settings" data-page-node-id="02JynczhbKUyuAlVzSOaYz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="TFnWcCXbQfC5RJNq2fKpoZ"><circle cx="12" cy="12" r="3" data-page-node-id="NZwN8OsgEUNl3h1BnkWKIP"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" data-page-node-id="4VeYkJq5ZCxqS1nqKPvDNB"/></svg></span></button>
+</nav>
+
+<!-- ================= 浮层 ================= -->
+<div class="toast" id="toast" data-page-node-id="ORHU6rZC96EcnE7DOfAUjR"></div>
+<div class="modal-mask" id="modalMask" data-page-node-id="s2lN7LbOfo6Zbixc0tnk91">
+  <div class="modal" id="modal" data-page-node-id="sgqQr8EiYzqlorBVmnAWX4">
+    <div id="modalBody" data-page-node-id="XP9i2zFnhSZfO6LsH4xy10"></div>
+    <div class="modal-actions" id="modalActions" data-page-node-id="Ziv2pPPAcEFF11Sresi0Da"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
