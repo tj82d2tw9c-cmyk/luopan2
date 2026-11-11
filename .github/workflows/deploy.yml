@@ -1,0 +1,44 @@
+# 纯静态站点：不需要构建，直接把仓库根目录当输出目录
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时刻只跑一个部署，新的 push 会取消排队中的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # base_path 会自动处理「用户名.github.io/仓库名」这种子路径，
+      # 页面里的相对路径（./style.css、./data/zhihu.json）本来就不受影响。
+      - uses: actions/configure-pages@v4
+
+      # scripts/ 是给 Actions 自己跑的抓取脚本，不是站点资源，排除掉别公开
+      - name: 准备发布目录
+        run: |
+          mkdir -p _site
+          rsync -a --exclude='.git' --exclude='.github' --exclude='scripts' \
+                   --exclude='发布说明.md' ./ _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
