@@ -31,7 +31,14 @@ jobs:
           # 在仓库 Settings → Secrets and variables → Actions 里配 ZHIHU_COOKIE
           ZHIHU_COOKIE: ${{ secrets.ZHIHU_COOKIE }}
           ROUNDS: '8'
-        run: node scripts/fetch-zhihu.js
+        run: |
+          # cookie 没配的话脚本会匿名请求，拿到 401/0 条，报错信息很难看懂。
+          # 这里先拦一下，直接告诉人去哪配。
+          if [ -z "$ZHIHU_COOKIE" ]; then
+            echo "::error::没有配置 ZHIHU_COOKIE。Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+          node scripts/fetch-zhihu.js
 
       - name: 检查结果
         # 抓取偶尔会因限流只拿到一两百条，覆盖现有 379 条反而是退步。

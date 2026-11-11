@@ -36,14 +36,57 @@ const path = require('path');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
 const OUT = path.join(__dirname, '..', 'data', 'zhihu.json');
+const BAK = OUT + '.bak';
 const COOKIE_FILE = path.join(__dirname, '.cookie');
 
-const COOKIE = (process.env.ZHIHU_COOKIE || (fs.existsSync(COOKIE_FILE) ? fs.readFileSync(COOKIE_FILE, 'utf8') : '')).trim();
+/**
+ * 兼容三种 cookie 写法，统一成 "k=v; k=v" 的 Cookie 头：
+ *   1) 标准浏览器格式   z_c0=xxx; d_c0=yyy
+ *   2) "Cookie: " 前缀    Cookie: z_c0=xxx
+ *   3) 表格管道分隔格式   1|0|手机号|4:z_c0|92:值|49:值
+ *      —— 从某些导出工具粘出来的就是这个形状，直接当 Cookie 头发出去
+ *         知乎不认，会返回 0 条，且不报错，很难查。这里拆开重组。
+ */
+function normalizeCookie(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim().replace(/^Cookie:\s*/i, '').replace(/[\r\n]+/g, '');
+  // 已经含分号 = 标准格式，直接用（管道格式里不会出现分号）
+  if (s.includes(';')) return s;
+
+  // 管道格式：项名 "4:z_c0"，值在下一个字段 "92:值"
+  // 不能用 [A-Za-z0-9_-]+ 判项名 —— z_c0 的值是 base64，同样长这样，
+  // 会把自己当成项名。项名是确定的那几个短名字，白名单最稳。
+  if (s.includes('|')) {
+    const NAMES = new Set(['z_c0', 'd_c0', '_zap', 'q_c1', 'l_cap_id', 'cap_id', 'z00', 'xsrf', '_xsrf', 'tz', 'sessionid']);
+    const parts = s.split('|');
+    const out = [];
+    let pending = null;
+    for (const p of parts) {
+      const m = p.match(/^(\d+):([\s\S]*)$/);
+      if (!m) continue;
+      const val = m[2];
+      if (!pending && NAMES.has(val)) { pending = val; continue; }
+      if (pending) { out.push(pending + '=' + val); pending = null; }
+    }
+    return out.join('; ');
+  }
+  return s;
+}
+
+const COOKIE = normalizeCookie(process.env.ZHIHU_COOKIE || (fs.existsSync(COOKIE_FILE) ? fs.readFileSync(COOKIE_FILE, 'utf8') : ''));
 
 /** 每轮拉取次数（female / male 各多少次）。16 轮 ≈ 300+ 条，约 25 秒 */
 const ROUNDS = Number(process.env.ROUNDS || 8);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** 读现有数据，用于写盘前对比。读不到就当没有 */
+function readExisting() {
+  try {
+    const j = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+    return Array.isArray(j.lists) ? j : null;
+  } catch { return null; }
+}
 
 async function api(url, referer = 'https://www.zhihu.com/fiore/h5/vip-web') {
   const res = await fetch(url, {
@@ -326,7 +369,24 @@ function buildGenreLists(pool) {
     lists,
   };
 
+  // 兜底：抓不到东西就别覆盖现有数据。cookie 过期、知乎改接口、限流，
+  // 都会表现在「条目数异常少」上，这时写盘等于把 379 条换成 0 条。
+  // 这个坑踩过一次（ROUNDS=1 测试把 336 条覆盖成 124 条），必须挡在写盘前。
+  const prev = readExisting();
+  const prevTotal = prev ? prev.lists.reduce((s, L) => s + L.items.length, 0) : 0;
+  if (pool.length < 50) {
+    console.error(`\n只有 ${pool.length} 条，明显异常（现有 ${prevTotal} 条），不覆盖文件。`);
+    if (prevTotal) console.error('检查 cookie 是否过期：知乎 401 通常就是登录态失效。');
+    process.exit(1);
+  }
+  if (prevTotal >= 100 && pool.length < prevTotal * 0.7) {
+    console.error(`\n新抓 ${pool.length} 条 vs 现有 ${prevTotal} 条，降幅超过 30%，不覆盖文件。`);
+    console.error('确实要强制覆盖请加 FORCE=1 再跑。');
+    if (process.env.FORCE !== '1') process.exit(1);
+  }
+
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
+  if (prev) { try { fs.copyFileSync(OUT, BAK); } catch { } }
   fs.writeFileSync(OUT, JSON.stringify(out, null, 2), 'utf8');
 
   console.log(`\n${'─'.repeat(46)}`);
