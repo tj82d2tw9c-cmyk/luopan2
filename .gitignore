@@ -1,0 +1,11 @@
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 万一有人把调试产物放进来了
+*.cookie
+.cookie
+*.png
+!assets/**/*.png
