@@ -2087,7 +2087,1648 @@ function renderReview(box, r) {
     <div class="sr-foot">本地规则审查 · 判断依据是知乎盐选的编辑标准，不联网、不上传。批评是给稿子的，不是给你的。</div>`;
 }
 
-/* ================= 7. 数据设置 ================= */
+/* ================= 7. 拆文台 =================
+   拆文和审稿是相反的方向：
+   - 审稿是「这篇能不能投」，往坏处挑，用编辑标准
+   - 拆文是「这篇有什么可学的」，往好处挖，用结构视角
+
+   拆文的第一原则（skill 原文）：拆骨架，不抄桥段。
+   所以这里所有输出都必须是「结构」和「公式」，不给「照这句写」。
+
+   能力边界要说清楚：
+   骨架表、篇幅公式、钩子类型、文风指纹 —— 这些是字面可算的，真算。
+   底层动机、技法命名、伏笔的真实用途 —— 这些要理解「谁在演」，
+   字面算不出来。这几项给「候选 + 提示 + 填空位」，不编造。
+   ============================================================ */
+
+/* ---------- 7.0 词表 ---------- */
+
+// 功能定位必须是动词短语（skill 要求），不许用「铺垫」这种含糊词
+// 一条规则 = 一个动作 + 一个可识别的信号
+const TEAR_FUNC = [
+  {
+    key: 'start', name: '启动', hook: '启动',
+    desc: '把读者按进一个已经开始的事件里，不给退路',
+    test: (p, i, ctx) => i < ctx.n * .12 && /(^|[。！？\n])[^。！？\n]{0,10}(我|他|她)[^。！？\n]{0,6}(才知道|才知道|接到|收到|看见|听到|站在|跪在|发现)/.test(p),
+  },
+  {
+    key: 'rule', name: '立规则', hook: '立规矩',
+    desc: '把这个世界怎么运转摊开给读者，之后所有冲突都按这个规矩走',
+    test: (p, i, ctx) => /(规矩|规矩|从来|一向|一直是|家里有个|我们家|不许|只能|必须|每次|按说)/.test(p) && i < ctx.n * .3,
+  },
+  {
+    key: 'escalate', name: '加压', hook: '增压',
+    desc: '对方把筹码往上抬，主角退无可退，读者开始替他算退路',
+    test: p => /(又|再|还要|还得|不止|连同|而且|这一回|第二次|第三次|更狠|更绝)/.test(p) && /(说|问|让|逼|骂|摔|扔|推)/.test(p),
+  },
+  {
+    key: 'clash', name: '撞车', hook: '正面对撞',
+    desc: '两个人当面摊牌，谁都不肯让，读者的立场被迫选边',
+    test: (p, i, ctx) => {
+      const dlg = (p.match(/[“"「][^”」"]{2,}[”」"]/g) || []).length;
+      return dlg >= 2 || (dlg >= 1 && /(说|问|答|吼|喊|骂)/.test(p) && p.length < 160);
+    },
+  },
+  {
+    key: 'reveal', name: '揭底', hook: '摊牌',
+    desc: '把藏着的那件事翻出来，读者前面读到的意思全部改写',
+    test: p => /(原来|其实|结果|没想到|真相|一直都是|根本就不是|从来没|一直瞒|这才知道|后来才知道|才明白|翻出来看|看了一遍|才发现|才发现那|签完合同|后来我才知道)/.test(p),
+  },
+  {
+    key: 'flip', name: '反转', hook: '翻转',
+    desc: '把读者的判断整个翻过来：以为的受害者其实是布局的人',
+    test: p => /(可我|可实际上|反过来说|反倒是|谁知道|却不知道|恰恰|偏偏是|真正|才是那个)/.test(p),
+  },
+  {
+    key: 'burst', name: '引爆', hook: '炸开',
+    desc: '积压的情绪一次性倒出来，动作和短句顶到最满',
+    test: (p, i, ctx) => {
+      // 引爆是「积压之后的爆发」，前 15% 还没有积压，不判引爆
+      if (i < Math.max(1, ctx.n * .15)) return false;
+      // 只看「直接作用于人」的情绪词，像「痛子」「发痛」这种顺带提一句的不算
+      const hard = (p.match(/(哭|吼|喊|骂|摔|砸|撕|扇|打|血|崩|疯|恨|尖叫|发抖|窒息|绝望|崩溃|滚|跪)/g) || []).length;
+      // 爆发段的平均句长一定短
+      const sents = trSents(p);
+      const avgLen = sents.length ? sents.reduce((a, s) => a + s.length, 0) / sents.length : 999;
+      const bangs = (p.match(/[！!]/g) || []).length;
+      return (hard >= 3 && avgLen <= 26) || (hard >= 2 && avgLen <= 18) || (hard >= 2 && bangs >= 2);
+    },
+  },
+  {
+    key: 'cost', name: '付代价', hook: '代价落地',
+    desc: '赢也付出了东西，读者松一口气的同时心里发沉',
+    test: p => /(代价|失去了|再也没有|回不去|换来了|值得吗|后悔|一辈子|再也见不到|不能了)/.test(p),
+  },
+  {
+    key: 'close', name: '收网', hook: '合上',
+    desc: '把散着的人一个个安置好，留一句让读者替你说完的话',
+    // 最后一节一定是收网；前面那一节只在明显是收束时才算
+    test: (p, i, ctx) => i === ctx.n - 1 || (i === ctx.n - 2 && /(最终|判决|那套|判决给我|最后|再也没有|后来)/.test(p)),
+  },
+];
+
+// 五种钩子，skill 规定只能这五种，指不出来就标「无钩子」
+const TEAR_HOOK = [
+  { key: 'suspense', name: '悬念', test: p => /[？?]\s*$/.test(p.trim()) || /(为什么|怎么回事|到底|是谁|怎么会|难道|我知道[他她]|我看见[他她]|被[他她]看见|察觉|发现了)/.test(p) },
+  { key: 'flip', name: '反转', test: p => /(原来|其实|结果|没想到|却是|反倒是|真正|才是那个|根本不是)/.test(p) },
+  { key: 'crisis', name: '危机', test: p => /(来不及|要出事|完了|糟了|马上|只剩|最后一|再不|快|危险|撑不住)/.test(p) },
+  { key: 'identity', name: '身份', test: p => /(他是|她就是|竟然是|居然是|的身份|原来是他|原来是她|才知道他是|才知道她是)/.test(p) },
+  { key: 'slap', name: '打脸', test: p => /(脸都|说不出话|哑口|傻|懵|不敢|低下头|脸色|一句话都|当场|闭嘴|没话可说)/.test(p) },
+];
+
+/* 留白式收尾：不算六种钩子里的一种，但也不能报「无钩子」。
+   特征：全文最后一句极短（<=14 字）、没有情绪词、没有感叹号，
+   却带一个具体的物件或动作（钥匙 / 留了一把 / 还放在抽屉）。
+   网文里这是最常见的收法 —— 不点破，让读者自己去补最后那口气。 */
+function trIsReserve(last, isFinal) {
+  if (!isFinal) return false;
+  const t = (last || '').trim();
+  if (CN(t) > 14) return false;
+  if (/[！!？?]/.test(t)) return false;
+  // 注意括号：不写括号会被解析成 (A|B)[C]，等于白判
+  const cue = /(钥匙|留下|留了|留着一把|放回|关上门|锁上|还在|一直|再也没|一个人|空着|安静)/.test(t);
+  const bare = /[。，,]$/.test(t) && CN(t) >= 4 && CN(t) <= 10;
+  return cue || bare;
+}
+
+// 角色功能：只能用一种（skill 要求），多合一 = 冗余角色信号
+const TEAR_ROLE = [
+  { key: 'lead', name: '主角', hint: '承受压力、做出选择的人' },
+  { key: 'ant', name: '对抗者', hint: '把压力推过来的人' },
+  { key: 'help', name: '助力者', hint: '替主角递信息、递台阶的人' },
+  { key: 'wit', name: '见证者', hint: '在场但不动手，负责让读者有同伙' },
+  { key: 'tool', name: '工具人', hint: '只出现一次，只提供一条信息' },
+];
+
+// 伏笔技法：skill 规定的六种
+const TEAR_FORESHADOW = [
+  { key: 'downplay', name: '降级陈述', test: (s) => /(顺口|随口|顺便|也就|不过|只是|没什么|不值得一提|谁也没在意)/.test(s) },
+  { key: 'reverse', name: '反向真话', test: (s) => /[“"「][^”」"]{0,20}(我没|不是我|真的不|信不信|你爱信不信)[^”」"]{0,20}[”」"]/.test(s) },
+  { key: 'reuse', name: '细节复用', test: () => false },  // 需要跨段比对，单独算
+  { key: 'second', name: '二手信息', test: (s) => /(听说|据说|说是|转告|告诉我说|有人讲|传来)/.test(s) },
+  { key: 'action', name: '动作即证据', test: (s) => /(手一抖|手停|指节|攥|捏|顿了一下|僵|退了半步|别过脸|不敢看)/.test(s) },
+  { key: 'invert', name: '倒装伏笔', test: () => false },  // 需要时序判断，单独算
+];
+
+// 文风指纹：感官偏好（判断作者靠哪一路感官写现场）
+const TEAR_SENSE = {
+  sight: { name: '视觉', re: /(看见|看到|盯着|望着|看了|看了一遍|扫了一眼|目光|视线|红色|白色|黑色|亮|暗|光|影子|颜色|玻璃|屏幕|字|照片|一笔一划|放大)/g },
+  sound: { name: '听觉', re: /(听见|听到|声音|响了|一响|响|安静|沉默|寂静|叫|喊|吼|哭|嗡|嘈杂|静得|电话那头)/g },
+  touch: { name: '触觉', re: /(冷|热|烫|凉|湿|硬|软|疼|痛|抖|攥|捏|贴|碰到|摸着|粗糙|手心|出汗|发抖)/g },
+};
+
+// 小说腔（拆分时的负面信号，用于「最弱一环」）
+const TEAR_SICK = {
+  saybook: /(只见|此时此刻|就在这时|此时此地)/g,
+  cliche: /(心中一紧|心如刀割|五味杂陈|百感交集|如遭雷击|犹如五雷轰顶|心情久久不能平静)/g,
+  explain: /(因为我知道|我心里明白|我知道这意味着|我清楚地知道)/g,
+  adverb: /(狠狠地|紧紧地|深深地|慢慢地|缓缓地|轻轻地|静静地)/g,
+};
+
+/* ---------- 7.1 文本切分（复用审稿官的分段/分句） ---------- */
+
+function trParas(text) {
+  return text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+}
+
+function trSents(text) {
+  // 保留结尾标点
+  const out = [];
+  const re = /[^。！？!?…\n]+[。！？!?…]*/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const s = m[0].trim();
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+/* 按自然节切分：优先用原文小标题，否则按空行板块 + 字数比例 */
+function trSections(paras) {
+  const HEAD = /^(第[一二三四五六七八九十\d]+[章节]|[一二三四五六七八九十]+[、.]|\d+[、.]|【[^】]{1,12}】|#{1,3}\s)/;
+  const hasHead = paras.some(p => HEAD.test(p) && p.length < 30);
+  if (hasHead) {
+    const secs = [];
+    let cur = null;
+    paras.forEach((p, i) => {
+      if (HEAD.test(p) && p.length < 30) {
+        cur = { title: p.replace(/^#+\s*/, ''), paras: [], start: i };
+        secs.push(cur);
+      } else if (cur) {
+        cur.paras.push(p);
+      } else {
+        cur = { title: '开头', paras: [p], start: i };
+        secs.push(cur);
+      }
+    });
+    return secs.map((s, i) => ({ ...s, i }));
+  }
+  // 没有小标题：按「场景切换」切，而不是按段落数硬切。
+  // 场景切换的信号：时间跳转 / 地点跳转 / 人称场景重置（从对白切到独白）
+  const TIME_SW = /^(那天|第二天|第三天|第二天早上|晚上|后来|几天后|一周后|一个月后|开庭那天|那年|后来我|再后来|一直到|婚礼|葬礼|去年|三年前|十年后)/;
+  const PLACE_SW = /^(酒店|医院|法院|派出所|家里|公司|车里|楼上|楼下|走廊|门口|庭上|那天晚上|那天下午)/;
+  const secs = [];
+  let cur = { title: '', paras: [], start: 0 };
+  const minParas = Math.max(2, Math.round(paras.length / 8));   // 最少几段才成一节
+  paras.forEach((p, i) => {
+    const isScene = TIME_SW.test(p) || PLACE_SW.test(p);
+    if (i > 0 && isScene && cur.paras.length >= minParas) {
+      secs.push(cur);
+      cur = { title: '', paras: [p], start: i };
+    } else {
+      cur.paras.push(p);
+    }
+  });
+  if (cur.paras.length) secs.push(cur);
+
+  // 节太少（少于 3 节）就按字数均分，保证骨架表有结构可言
+  if (secs.length < 3 && paras.length >= 8) {
+    secs.length = 0;
+    const target = Math.ceil(paras.length / 4);
+    for (let i = 0; i < paras.length; i += target) {
+      secs.push({ title: '', paras: paras.slice(i, i + target), start: i });
+    }
+  }
+  const total = paras.reduce((a, p) => a + p.length, 0);
+  return secs.map((s, i) => ({ ...s, i, share: s.paras.join('').length / Math.max(1, total) }));
+}
+
+/* ---------- 7.2 功能定位 ---------- */
+
+function trFuncOf(para, idx, ctx) {
+  const hits = TEAR_FUNC.filter(f => {
+    try { return f.test(para, idx, ctx); } catch { return false; }
+  });
+  const dlg = (para.match(/[“"「][^”」"]{2,}[”」"]/g) || []).length;
+  const pos = ctx.n > 1 ? idx / (ctx.n - 1) : 0;   // 0 = 开头，1 = 结尾
+  const pick = k => TEAR_FUNC.find(f => f.key === k);
+
+  // 第 1 节永远是「启动」—— 这是结构事实，不靠信号判断。
+  // 否则一节里只要出现「又说又扔」，就会被判成「加压」，开篇就没有开篇的样子了。
+  // 只有一节时，它既是启动也是收网，优先按启动报（读者看到的首先是开场）。
+  if (idx === 0) {
+    return { ...pick('start') };
+  }
+
+  // —— 记分，而不是「谁先命中谁赢」——
+  // 一节里出现「后来我才知道」不代表这一节就是揭底：如果这一节后面大半段
+  // 都是当面顶（台词密集、有人让步），它的主动作其实是撞车，揭底只是开场的一句。
+  const hitKey = new Set(hits.map(h => h.key));
+  const scene = trSceneScore(para);   // 台词密度 / 短句密度 / 硬情绪密度
+  const shot = {
+    start: 0,
+    rule: hitKey.has('rule') ? 1 : 0,
+    escalate: hitKey.has('escalate') ? 1 : 0,
+    clash: hitKey.has('clash') ? 1 : 0,
+    reveal: hitKey.has('reveal') ? 1 : 0,
+    flip: hitKey.has('flip') ? 1 : 0,
+    burst: hitKey.has('burst') ? 1 : 0,
+    cost: hitKey.has('cost') ? 1 : 0,
+    close: hitKey.has('close') ? 1 : 0,
+  };
+  // 信号强度修正 —— 决定这一节的「主色」
+  // 撞车不能只靠台词量：一节里只要有人说话就会被喂饱，三节连判撞车。
+  // 撞车真正需要的是「来回」—— 有问有答、有人反驳、有人变脸。
+  const exchange = trExchange(para);
+  shot.clash += scene.talk * .7 + scene.turn * .5 + Math.min(3.2, exchange * .8);
+  // 台词密度太低就是独白追踪，不可能是撞车 —— 这一条必须放在加分之后，
+  // 否则「我请了假，跟了她一整天」这种纯叙述会被 exchange 硬拉成对峙
+  if (scene.talk < .3) shot.clash = 0;
+  else if (scene.talk < .45) shot.clash -= 1.2;
+  // 封顶：撞车再强也只是撞车，不该因为对话多就压过揭底和反转。
+  // 结构判断里「这一节揭示了什么」比「这一节吵得多凶」更高层。
+  shot.clash = Math.min(shot.clash, 4.6);
+  shot.burst += scene.hard * .8;
+  shot.reveal += scene.newInfo * .7;
+  // 强改写信号：出现「原来/其实/也就是说/根本就不是/才明白」这类词，
+  // 说明这一节的作用是把前面读到的意思翻掉，不是吵架。
+  // 这类词只要出现两次以上，就该盖过撞车 —— 吵架不会改写认知。
+  const rewrite = (para.match(/(原来|其实|也就是说|换句话说|根本|从来没|一直|才明白|才知道|不是给|不是说|才想起)/g) || []).length;
+  if (rewrite >= 2) shot.reveal += 2.2 + rewrite * .3;
+  // 反转：把读者的判断整个翻过来。
+  // 网文的反转经常只有一句话，「那是我哥」「其实是他」——
+  // 靠的是「那/这/原来 + 是 + 一个具体身份」这个结构，不是形容词。
+  //
+  // 关键区别（这是拆文里最容易搞混的一处）：
+  //   揭底 = 翻出一条新事实，前面没读过（「备注栏写的是借给我妈」）
+  //   反转 = 先让读者认定 A，再把 A 推翻成 B（「你跟他多久了」→「那是我哥」）
+  // 所以反转必须「先立后破」：本节前半要有一个被推翻的判断，后半才是答案。
+  const flipSig = (para.match(/(那是我|那不是我|是我哥|是我姐|是我爸|是我妈|是我儿子|是我女儿|其实是我|竟是我|居然是我|根本就不是|才是那个|偏偏是|谁知道是)/g) || []).length;
+  const flipIdx = para.search(/(那是我|那不是我|是我哥|是我姐|是我爸|是我妈|其实是我|竟是我|居然是我|根本就不是|才是那个)/);
+  // 前半段要有「指控/猜测/以为」这类被推翻的判断
+  const setup = /(你跟他|你是不是|我以为|我当是|我猜|难道|不会吧|是不是他|多久了)/;
+  const hasSetup = flipIdx > 0 && setup.test(para.slice(0, flipIdx + 20));
+  if (flipSig >= 1 && hasSetup) {
+    shot.flip += 4.2 + flipSig * .6;
+  } else if (flipSig >= 1 && /(愣|僵|安静|沉默|笑了)/.test(para)) {
+    // 没有明确前置判断时，只给揭底级别的分 —— 它可能只是「翻出一条事实」
+    shot.reveal += 1.6;
+  }
+  shot.escalate += (hitKey.has('escalate') ? 1 : 0) + scene.turn * .3;
+
+  let top = null, topV = -1;
+  ['reveal', 'flip', 'burst', 'clash', 'cost', 'escalate', 'rule', 'close'].forEach(k => {
+    if (!shot[k]) return;
+    // flip 与 reveal 分数接近时让 flip 胜出：揭底是把藏着的翻出来，
+    // 反转是把读者的判断整个翻过去 —— 后者是更高一层的结构动作。
+    const v = k === 'flip' ? shot[k] * 1.15 : shot[k];
+    if (v > topV) { topV = v; top = pick(k); }
+  });
+
+  if (!top) {
+    if (dlg >= 2) return { ...pick('clash'), soft: true };
+    if (/(走|跑|推|拉|拿|放|转身|站|坐)/.test(para)) return { ...pick('escalate'), soft: true };
+    top = pick('rule');
+    return { ...top, soft: true, fallback: true };
+  }
+
+  // 「立规则」只在前 40%
+  if (top.key === 'rule' && pos >= .4) {
+    top = pos < .7 ? pick('escalate') : pick('close');
+    return { ...top, soft: true };
+  }
+  // 「收网」只允许在后 25%
+  if (top.key === 'close' && pos < .75) {
+    top = hits.find(h => h.key !== 'close') || pick('escalate');
+  }
+  // 最后一节默认是「收网」—— 这是结构事实。唯一例外是它本身在引爆或反转：
+  // 网文也常见「最后一节炸完就结束」，那种情况按引爆/反转报更准确。
+  if (idx === ctx.n - 1 && !['burst', 'flip', 'reveal'].includes(top.key)) {
+    return { ...pick('close'), soft: true };
+  }
+  return top;
+}
+
+/* 一节「像不像现场戏」：台词密度、短句、退让动作、硬信息量。
+   拆文最忌讳用「命中了哪个词」定功能，得看这一节大部分字在干什么。 */
+function trSceneScore(para) {
+  const sents = trSents(para);
+  const nSent = Math.max(1, sents.length);
+  // 台词：带引号 + 「我说：」「他说，」这类转述都算
+  const quoted = (para.match(/[“「"][^”」"]{2,}[”」"]/g) || []).length;
+  const told = (para.match(/(我|他|她|妈|婆婆|爸|阿姨|小姑子|律师|法官)[^。！？\n]{0,4}(说|问|答|道|回|喊|吼|骂)[：:，,]?/g) || []).length;
+  const talk = (quoted * 2 + told) / nSent;         // 每句有多少句是带台词的
+
+  // 退让 / 变脸 / 动作结果：一场正面对峙总有人「让步」或「变脸」
+  const turn = ((para.match(/(脸色|变脸|红了|白了|涨得通红|愣住|僵住|说不出|一句话都没说|没话|闭嘴|低下头|不敢|沉默|退了半|摔在|砸在|递过去|递给他|递给她)/g) || []).length);
+
+  const hard = (para.match(/(哭|吼|喊|骂|摔|砸|撕|扇|打|血|崩|疯|恨|尖叫|发抖|窒息|绝望|崩溃|滚|跪|脸都)/g) || []).length;
+
+  // 新信息：这一节里首次出现的凭据/数字/法律动作，粗略用「出现次数」估
+  const newInfo = ((para.match(/(房产证|产权证|合同|协议|流水|账本|户口本|病历|诊断书|工资条|判决书|名单|截图|备注|转账|凭证|还款|签字|首付|贷款|\d+\s*[万千百块元天年月岁次条张页])/g) || []).length) / Math.max(1, nSent * .5);
+
+  return { talk, turn, hard, newInfo };
+}
+
+/* 「来回」的次数：A 说 → B 答 → A 再说。
+   一唱一和的对白是交代，一来一回的对白才是撞车。
+   统计「说/问/答」这类说话动词后面跟着不同主语的切换次数 —— 切得越多，越像在吵。 */
+function trExchange(para) {
+  const SUBJ = /(我|他|她|妈|婆婆|爸|阿姨|小姑子|律师|法官|医生|陈砚|林晚)/g;
+  const sents = trSents(para);
+  let lastSubj = null, turns = 0;
+  sents.forEach(s => {
+    // 只看带说话动词的句子
+    if (!/(说|问|答|道|回|喊|吼|骂|开口|接着)/.test(s)) return;
+    const m = s.match(SUBJ);
+    if (!m) return;
+    const who = m[0];
+    if (lastSubj && who !== lastSubj) turns++;
+    lastSubj = who;
+  });
+  return turns;
+}
+
+/* 钩子：只看这一节最后 1~2 句 */
+function trHookOf(section, isFinal) {
+  const text = section.paras.slice(-2).join('');
+  const last = (trSents(text).pop() || '').trim();
+  if (!last) return { key: null, name: '无钩子', last: '' };
+  const h = TEAR_HOOK.find(x => x.test(last));
+  if (h) return { key: h.key, name: h.name, last };
+  // 倒数第二句也算 —— 但只认「悬念/反转/身份」这三种需要铺垫的，
+  // 「打脸」「危机」靠的是末句的即时冲击，往前挪一句就变成了别的事：
+  // 比如「婆婆脸色沉下来」+「我说好，那我就不问了」，是主角让步，不是打脸。
+  const sents = trSents(text);
+  const second = sents[sents.length - 2] || '';
+  const h2 = TEAR_HOOK.find(x => x.test(second) && ['suspense', 'flip', 'identity'].includes(x.key));
+  if (h2) return { key: h2.key, name: h2.name, last: second, soft: true };
+  // 全文最后一句的留白，是「收束」不是「无钩子」
+  if (trIsReserve(last, isFinal)) return { key: 'reserve', name: '留白', last, soft: true };
+  // 让步式节尾：主角吞下这一口，读者替他不甘 —— 这不是六种钩子里的任何一种，
+  // 但网文大量这么收节（「我说好」「我没再说话」「我忍了」），报「无钩子」是误判
+  if (/(我说好|我点头|我说行|我没再|我没说话|我没有说话|我没吭声|我忍|算了|随你|行吧|我没答应|我也没|我沉默|我不知道|我没问|我一次都没)/.test(last)) {
+    return { key: 'yield', name: '让步', last, soft: true };
+  }
+  return { key: null, name: '无钩子', last };
+}
+
+/* ---------- 7.3 信息增量 ---------- */
+
+// 信息增量 = 这一节新出现的「硬信息」：金额、证件、姓名、动作结果
+// 只认「钱和量」的中文数字 —— 「三天」「一页」是时间副词，不是信息增量，
+// 把它们列进表里只会把真正的凭据挤掉。
+const CN_NUM = '[0-9零一二三四五六七八九十百千万两半]+';
+const INFO_HARD = [
+  { re: new RegExp(`${CN_NUM}\\s*(万|千|百|块|元|万元|万块|毛钱|块钱)`, 'g'), name: '金额' },
+  { re: /(房产证|产权证|合同|协议|流水|账本|户口本|病历|诊断书|工资条|判决书|名单|截图|照片|短信|备注|转账|凭证|复印件)/g, name: '凭据' },
+  { re: /(离婚|过户|报警|起诉|法院|派出所|分割|继承|放弃|按手|赔偿|取消婚礼)/g, name: '法律动作' },
+  // 地点：网文的「跟进感」靠地点推进 —— 她去了银行、进了写字楼，都是读者在记账
+  { re: /(银行|写字楼|中介|医院|法院|派出所|酒店|机场|车站|公司楼下|小区门口|马路对面|老家)/g, name: '地点' },
+];
+
+function trInfoGain(section, seen, allNames) {
+  const text = section.paras.join('');
+  const out = [];
+  INFO_HARD.forEach(k => {
+    const ms = text.match(k.re) || [];
+    // 首次出现才叫「新增知情」，重复出现不算；但同一词在不同节重复出现要单独标出来
+    const fresh = [...new Set(ms.filter(m => !seen.has(m)))];
+    fresh.forEach(f => { seen.add(f); out.push({ type: k.name, v: f }); });
+  });
+  // 人物新出现：用全文的人名表来查，而不是对这一段单独再跑一次识别 ——
+  // 开头一节只有一百多字，单段识别根本达不到门槛，角色永远上不了表。
+  const names = (allNames && allNames.length) ? allNames.filter(n => text.includes(n)) : trFindNames(text);
+  const freshNames = names.filter(n => !seen.has('@' + n));
+  freshNames.forEach(n => { seen.add('@' + n); out.push({ type: '新人物', v: n }); });
+  // 称谓角色（妈/婆婆/他）也算新人物，网文里这比名字常见得多
+  if (allNames) {
+    // 这一节里已经点名的具体称谓（婆婆/妈/小姑子…）
+    const namedRoles = TEAR_ALIAS
+      .filter(a => a.name !== '他' && a.name !== '她' && text.includes(a.name))
+      .map(a => a.name);
+    TEAR_ALIAS.forEach(a => {
+      if (!new RegExp(a.re.source).test(text)) return;
+      if (seen.has('@' + a.name)) return;
+      if (a.name === '他' || a.name === '她') {
+        // 已经有具体称谓了，代词指的就是那个人，不能再报一次
+        if (namedRoles.length) return;
+        // 全文已经认出了具名角色，代词多半是他/她 —— 也别报
+        if (allNames.length) return;
+        if (CN(text) < 40) return;
+      } else if (!text.includes(a.name)) return;
+      seen.add('@' + a.name);
+      out.push({ type: '新人物', v: a.name });
+    });
+  }
+  // 结局/后果：这一节交代了事情的结果，本身就是信息（不必有凭据）
+  // 「结果」单用太泛 —— 「结果她没来」是转折，「结果出来了」才是结局，只认后者
+  const ENDING = /(没办成|没结成|取消了|散了|结束了|离了|走了|再也没|最终|判了|分了|定下来了|散了场|人没了)/;
+  if (ENDING.test(text)) {
+    const m = text.match(/[^。！？\n]{0,10}(没办成|没结成|取消了|散了|结束了|离了|再也没|最终|判了|分了|定下来了|散了场|人没了)[^。！？\n]{0,10}/);
+    if (m) out.push({ type: '结局', v: m[0].trim().slice(0, 16) });
+  }
+  // 兜底：这一节什么硬信息都没有，就描述它实际给了什么「软信息」
+  if (!out.length) {
+    const soft = [];
+    // 反转句式也算认知改写 —— 「那是我哥」翻掉的是读者的判断，这就是信息
+    if (/(原来|其实|结果|没想到|才明白|才知道|那是我|不是我|其实是我|根本就不是|才是那个)/.test(text)) {
+      soft.push({ type: '认知', v: '读者的判断被推翻' });
+    }
+    if (/[？?]/.test(text)) soft.push({ type: '悬置', v: '抛出一个未答的问题' });
+    if (/(从此|之后|再也不|再也|最后|终于)/.test(text)) soft.push({ type: '节点', v: '时间推进，局面变了' });
+    if (!soft.length) {
+      const sent = trSents(text)[0] || text;
+      soft.push({ type: '无增量', v: sent.slice(0, 16) + (sent.length > 16 ? '…' : '') });
+    }
+    out.push(...soft.slice(0, 2));
+  }
+  // 一节最多报 4 条：凭据一多就变成罗列，读者看不出这一节的重点
+  // 金额 > 法律动作 > 凭据 > 人物 > 结局，按这个优先级留
+  const RANK = { 金额: 0, 法律动作: 1, 凭据: 2, 地点: 3, 结果: 4, 结局: 4, 新人物: 5 };
+  return out
+    .map((x, i) => ({ x, i, r: RANK[x.type] ?? 5 }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .slice(0, 4)
+    .map(o => o.x);
+}
+
+/* 人名识别：中文姓名用「姓 + 1~2 字」+ 上下文动词，别误抓普通词 */
+const SURNAME = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫经房裘缪干解应宗丁宣邓郁单杭洪包诸左石崔吉龚程嵇邢滑裴陆荣翁荀羊惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴郁胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍却璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公';
+const NOT_NAME = /^(时候|现在|以后|之前|地方|东西|事情|样子|问题|办法|原因|意思|感觉|眼睛|手上|门口|屋里|窗外|桌上|床上|男人|女人|孩子|同学|同事|朋友|医生|护士|警察|妈妈|爸爸|爷爷|奶奶|哥哥|姐姐|弟弟|妹妹|一个|这个|那个|什么|怎么|为什|是不|可以|都不|都是|都没|都|也|还|就|不|没|这|那|一|有|在|是|和|的|了|着|过|要|会|能|说|看|想|知|觉|问|答|走|来|去|回|给|让|把|被|从|到|对|向|于|为|以|因|所|但|却|而|又|再|很|太|更|最|只|才|已|正|刚|将|曾)/;
+
+/* 「姓 + 名」里的姓在中文里也是常用名物字，如下词一旦命中必然不是人名。
+   例：「房子」「房本」的「房」在百家姓里；用前缀匹配，因为后面常跟「的/里/上」 */
+const NOT_PERSON = /^(房子|房屋|房门|房本|房产|婚前|婚事|婚房|婚姻|金额|金钱|金毛|白天|白色|石头|石阶|高处|高山|温和|和平|平时|平安|钱包|钱款|费用|马路|路上|江湖|沙子|林子|丁香|花盆|瓜子|米色|成功|成天|宁静|敌人|方向|向前|关爱|关怀|叶子|车站|车门|东西|左右|后代|简单|管家|包子|关系|关节|程序|颜色|童话|文学|文件|文本|资料|会议|家里|家人|家常|家长)[^\\u4e00-\\u9fa5]?$/;
+
+/* 常见名字用字 —— 用来判断「姓后面跟的到底像不像名字」 */
+const GIVEN = /^[伟芳娜秀英敏静丽强磊军洋勇艳杰娟涛明超兰霞平刚桂香文华建国志红玉杰云鹏辉婷颖琳鑫浩宇轩然琪瑶嘉怡欣悦晨阳琳哲睿哲楠蕾薇萱蕊菲妍姿娇媛婉娴淑贞慧贤良德福禄寿喜财旺发富贵荣华龙凤鹤松柏梅兰竹菊荷莲萍蓉]/;
+
+function trFindNames(text) {
+  const cand = {};
+  const re = new RegExp(`[${SURNAME}][\\u4e00-\\u9fa5]{1,2}`, 'g');
+  let m;
+  while ((m = re.exec(text))) {
+    const w = m[0];
+    if (CN(w) < 2) continue;
+    if (NOT_NAME.test(w)) continue;
+    if (NOT_PERSON.test(w)) continue;                                 // 「房子」「婚前」不是人
+    // 后面紧跟「的/里/上/们/子/们」的，是在用名词，不是在叫人
+    const after = text.slice(m.index + w.length, m.index + w.length + 1);
+    if (/[的里上们边面时后前]/.test(after)) continue;
+    // 取 2 字版和 3 字版都记，最后按出现次数和「像不像名字」加权
+    const w2 = w.slice(0, 2);
+    cand[w2] = (cand[w2] || 0) + 1;
+    if (w.length === 3) cand[w] = (cand[w] || 0) + 1;
+  }
+
+  // 「我叫 XXX」「我是 XXX」「XXX 说」—— 自我介绍是零成本的人名来源，
+  // 网文开篇几乎必写一句「我叫陈砚，今年三十二」，靠次数门槛永远捞不到
+  const selfRe = /(?:我叫|我是|名字叫|他们叫我)([\u4e00-\u9fa5]{2,3})(?=[，,。、\s]|今年|住在|在)/g;
+  let sm;
+  while ((sm = selfRe.exec(text))) {
+    const w = sm[1];
+    if (NOT_NAME.test(w) || NOT_PERSON.test(w)) continue;
+    // 自我介绍的人是「我」，不是新角色 —— 记在 meNames 里，不进角色表
+    cand['#' + w] = 99;
+  }
+
+  // 打分：出现次数 + 名字用字 + 「后面跟着说话/动作」的上下文
+  const scored = Object.keys(cand).map(w => {
+    let s = cand[w] * 2;
+    if (w[0] === '#') return { w: w.slice(1), n: 99, s: 99, isMe: true };
+    if (GIVEN.test(w.slice(1))) s += 3;
+    // 上下文：名字后面紧跟「说/问/看/站/…」或「，」「：」
+    const ctxRe = new RegExp(`${w}(说|问|答|道|笑|看|站|坐|走|把|从|，|：)`, 'g');
+    const ctxN = (text.match(ctxRe) || []).length;
+    s += ctxN * 2.5;
+    // 名字前有「跟/对/和/让/叫/是」更可信
+    const frontRe = new RegExp(`(跟|对|和|让|叫|是|着)${w}`, 'g');
+    s += (text.match(frontRe) || []).length * 2;
+    return { w, n: cand[w], s };
+  });
+
+  // 门槛：至少出现 2 次（自我介绍的直接放行），且分数 >= 7。
+  // 只看分数不看次数会放进「陈砚」这种自我介绍里出现一次的名字 ——
+  // 那是我，不是配角；而「林晚」出现四次却因为「晚」字不常见而落榜。
+  let list = scored.filter(x => x.isMe || (x.n >= 2 && x.s >= 7)).sort((a, b) => b.s - a.s);
+  const keep = [];
+  list.forEach(x => {
+    if (keep.some(k => k.length > x.w.length && k.startsWith(x.w.slice(0, 1)) && k.includes(x.w.slice(1, 2)))) return;
+    if (keep.includes(x.w)) return;
+    keep.push(x.w);
+  });
+  // 长名优先：若同时存在「林岚」和「林」类，只留长的
+  // 自我介绍的人（「我叫陈砚」）从角色表里剔掉 —— 那是我本人，
+  // 第一人称本来就有一行「我」，再列一遍就变成「陈砚是对抗者」这种荒谬结论
+  return keep.filter(w => !scored.some(x => x.isMe && x.w === w)).slice(0, 8);
+}
+
+/* 从「我叫 XXX」「我是 XXX」里取出叙事者自己的名字。
+   坑：「我是」后面接的是谓语时到处都是（「我是他妹妹」「我是来问的」），
+   而且「把我叫到客厅」里的「叫到客」也会被误抓。所以：
+   ① 只认「我叫」，不认「我是」——「我是」太泛；
+   ② 后面必须是语句边界，或「今年/住在/在…做」。 */
+function trMeName(text) {
+  const m = text.match(/(?:^|[。！？\n，,])\s*(?:我叫|我的名字叫|我名字叫)([\u4e00-\u9fa5]{2,3})(?=[，,。、\s]|今年|住在|在[^，。]{0,6}(做|上班|工作))/);
+  if (!m) return '';
+  const w = m[1];
+  if (NOT_NAME.test(w) || NOT_PERSON.test(w)) return '';
+  // 名字里不该出现动词和方位词
+  if (/(到|去|来|在|把|被|让|给|说|问|看|走|回|出|进)/.test(w)) return '';
+  return w;
+}
+
+/* ---------- 7.4 情绪落点 ---------- */
+
+/* 情绪落点 = 这一节把读者带到多高。
+   关键在「落点」两个字：看的是这一节收在哪，不是整节的平均值。
+   一整节在铺垫、最后一句炸开，读者的感受是「顶格」；
+   一整节在吵架、最后一句散掉，读者反而泄气。所以节尾权重更高。 */
+function trEmotion(section) {
+  const all = section.paras.join('');
+  const tail = section.paras.slice(-2).join('');   // 节尾两段 = 落点
+  const n = Math.max(1, CN(all));
+
+  const HARD = /(哭|吼|喊|骂|摔|砸|撕|扇|打|血|死|崩|疯|恨|痛|疼|尖叫|发抖|窒息|绝望|崩溃|滚|跪|喘|抖|脸都|红了|白了|涨得)/g;
+  const SOFT = /(脸色|变脸|愣|僵|沉默|说不出话|一句话都没说|没话|低下头|不敢|咬牙|冷笑|声音很平|静了几秒|停了|看了很久|很久|一遍又一遍)/g;
+  const TENSE = /(不是|而是|却|偏偏|竟然|居然|根本|从来|一直|原来|其实|也就是说|换句话说)/g;
+
+  const cnt = (re, s) => (s.match(re) || []).length;
+  const bangAll = cnt(/[！!]/g, all), askAll = cnt(/[？?]/g, all);
+  const bangTail = cnt(/[！!]/g, tail), askTail = cnt(/[？?]/g, tail);
+
+  // 整节：给一个底（这一节整体有多热）
+  const body = cnt(HARD, all) * 2.2 + cnt(SOFT, all) * 1.5 + cnt(TENSE, all) * .9
+    + bangAll * 1.2 + askAll * .7;
+  // 节尾：给一个尖（这一节收在哪）
+  const tailRaw = cnt(HARD, tail) * 3.4 + cnt(SOFT, tail) * 2.4 + cnt(TENSE, tail) * 1.3
+    + bangTail * 2.2 + askTail * 1.2;
+
+  // 节尾按「每百字」折算，避免长节尾天然占优；但设上限，防止两句话就封顶
+  const tailScore = Math.min(14, tailRaw * Math.min(1.6, 120 / Math.max(20, CN(tail))));
+  const bodyScore = body * Math.min(1.5, 160 / n);
+
+  return { score: +(tailScore * 1.5 + bodyScore).toFixed(1), lv: 'mid', name: '上扬' };
+}
+
+/* ---------- 7.5 篇幅公式 ---------- */
+
+function trShape(secs, paras) {
+  const total = paras.reduce((a, p) => a + p.length, 0) || 1;
+  return secs.map(s => ({
+    ...s,
+    chars: s.paras.join('').length,
+    share: s.paras.join('').length / total,
+  }));
+}
+
+/* ---------- 7.6 人物表里分离 ---------- */
+
+/* 称谓与代称：网文里大多数人根本不给名字，用这个补。
+   re 里刻意避开了「家人/家里人」—— 「都是一家人」是套话，不是角色 */
+const TEAR_ALIAS = [
+  { re: /(婆婆|丈母娘|公公|岳父|岳母)/g, name: '婆婆', role: 'ant', skip: /一家人|全家人/ },
+  { re: /(我妈|妈妈|母亲|妈)/g, name: '妈', role: 'help' },
+  { re: /(我爸|爸爸|父亲|爸)/g, name: '爸', role: 'help' },
+  { re: /(前夫|老公|丈夫|未婚夫|男朋友|男友)/g, name: '他', role: 'ant' },
+  { re: /(前妻|老婆|妻子|未婚妻|女朋友|女友)/g, name: '她', role: 'ant' },
+  { re: /(哥哥|姐姐|弟弟|妹妹|我哥|我姐|她哥|她姐|他哥|他姐)/g, name: '哥/姐', role: 'help' },
+  { re: /(律师|法官|医生|护士|警察|班主任|老板|经理)/g, name: '专业人士', role: 'help' },
+  { re: /(伴娘|闺蜜|同学|同事)/g, name: '朋友', role: 'wit' },
+];
+
+function trPeople(paras, names) {
+  const text = paras.join('\n');
+  const rows = [];
+
+  const positionsOf = needle => {
+    const pos = [];
+    paras.forEach((p, i) => { if (p.includes(needle)) pos.push(i); });
+    return pos;
+  };
+
+  // 1) 主角：第一人称。开篇如果写了「我叫陈砚」，把这个真名挂到「我」上，
+  //    否则读者会在人物表里找不到主角的名字，也会把它当成一个配角落。
+  const meN = (text.match(/我/g) || []).length;
+  const thirdN = (text.match(/[他她]/g) || []).length;
+  const isFirstPerson = meN > thirdN * 1.2 && meN >= paras.length;
+  const meName = trMeName(text);
+  if (isFirstPerson) {
+    rows.push({
+      name: meName ? '我（' + meName + '）' : '我', cnt: meN, first: 1, last: paras.length, role: TEAR_ROLE[0],
+      beh: ['承受压力', '做出选择'], dlg: [], isMe: true, multi: false,
+    });
+  } else if (meName) {
+    // 第三人称但写了「我叫」的情况少见，仍然当作主角
+    rows.push({
+      name: meName, cnt: Math.max(1, (text.match(new RegExp(meName, 'g')) || []).length),
+      first: 1, last: paras.length, role: TEAR_ROLE[0],
+      beh: ['承受压力', '做出选择'], dlg: [], isMe: true, multi: false,
+    });
+  }
+
+  // 2) 有名字的角色
+  names.forEach(nm => {
+    const pos = positionsOf(nm);
+    if (!pos.length) return;
+    rows.push({
+      name: nm, cnt: pos.length, first: pos[0] + 1, last: pos[pos.length - 1] + 1,
+      role: null, beh: [], dlg: [], multi: false,
+    });
+  });
+
+  // 3) 用称谓补（只在没有名字时才用，避免同一个角色出现两次）
+  //    阈值要高：一篇写婚礼的稿子里出现两次「爸」，不代表性爸是个角色
+  if (rows.filter(r => !r.isMe).length < 3) {
+    TEAR_ALIAS.forEach(a => {
+      let hits = (text.match(a.re) || []).length;
+      // 「一家人」「全家人」里的称谓不算 —— 那是套话不是人
+      if (a.skip) hits -= ((text.match(a.skip) || []).length * 1);
+      if (hits < Math.max(3, paras.length * .06)) return;
+      if (rows.some(r => r.name === a.name)) return;
+      const pos = positionsOf(a.name.split('/')[0]);
+      if (!pos.length) return;
+      rows.push({
+        name: a.name, cnt: hits, first: pos[0] + 1, last: pos[pos.length - 1] + 1,
+        role: TEAR_ROLE.find(r => r.key === a.role), beh: [], dlg: [], multi: false, alias: true,
+      });
+    });
+  }
+
+  // 4) 「他 / 她」当角色：只在「代词量明显盖过已知角色」时才补。
+  //    不能只判断「有没有名字」—— 一篇写着婆婆的稿子里「她」指的就是婆婆，
+  //    再多列一条「她」，人物表就变成同一个人占两行。
+  const knownN = rows.filter(r => !r.isMe)
+    .reduce((a, r) => a + (text.split(r.name).length - 1), 0);
+  // 已经认出具体人（林晚/婆婆）时，「她」几乎必然指的是那个人 —— 网文一篇里
+  // 很少同时有两个女性角色，代词合并比单列更接近事实。
+  const hasNamedWoman = rows.some(r => !r.isMe && /林晚|她|婆婆|妈|姐姐|妹妹|小姑子/.test(r.name));
+  const hasNamedMan = rows.some(r => !r.isMe && /他|前夫|老公|爸/.test(r.name));
+  if (rows.filter(r => !r.isMe).length === 0 || knownN < 3) {
+    ['他', '她'].forEach(t => {
+      if (t === '她' && hasNamedWoman) return;
+      if (t === '他' && hasNamedMan) return;
+      const n = (text.match(new RegExp(t, 'g')) || []).length;
+      // 有明显更多的代词才认，否则这几处「她」就是已经识别出来的那个人
+      if (n < 4 || n <= knownN * 1.5) return;
+      rows.push({ name: t, cnt: n, first: 1, last: paras.length, role: null, beh: [], dlg: [], multi: false });
+    });
+  }
+
+  // 5) 补全：角色功能、表层行为、矛盾信号
+  const nSec = Math.max(2, paras.length);
+  rows.forEach(p => {
+    if (!p.role) {
+      const spread = (p.last - p.first) / nSec;
+      if (p.cnt >= nSec * 1.6) p.role = TEAR_ROLE[0];
+      else if (p.cnt >= 2 && spread >= .25) p.role = TEAR_ROLE[1];
+      else if (p.cnt === 1 || (p.last - p.first) <= 1) p.role = TEAR_ROLE[4];
+      else p.role = TEAR_ROLE.find(r => r.key === 'help');
+    }
+    // 表层行为：这个人的名字/代称后面紧跟的动词
+    const beh = [];
+    const vlist = VERB_RE.source.replace(/^\//, '').replace(/\/g$/, '');
+    const re = new RegExp(`${p.name === '我' ? '我' : p.name}[^。！？\\n]{0,10}?(${vlist})`, 'g');
+    let m;
+    while ((m = re.exec(text))) {
+      if (m[1] && !beh.includes(m[1])) beh.push(m[1]);
+    }
+    p.beh = (p.isMe ? ['承受压力', '做出选择'] : beh.slice(0, 4));
+    // 矛盾：围绕这个人既有「给/让/护」又有「抢/瞒/逼」。
+    // 必须按【每一处出现】的近场窗口判，不能把整篇里所有出现点拼起来 ——
+    // 拼起来必然两部分都有，任何人都会被判成「有相反行为」。
+    // 判据：同一处出现点附近同时有「给」和「抢」，才说明这个人做事前后不一致。
+    let both = 0, giveN = 0, takeN = 0;
+    let mi;
+    const pRe = new RegExp(p.name === '我' ? '我' : p.name, 'g');
+    while ((mi = pRe.exec(text))) {
+      const win = text.slice(Math.max(0, mi.index - 14), mi.index + 20);
+      const g = /(给|递|让|帮|护|挡|替|端|夹)/.test(win);
+      const t = /(拿|抢|夺|占|瞒|骗|逼|推|扔|甩)/.test(win);
+      if (g) giveN++;
+      if (t) takeN++;
+      if (g && t) both++;
+    }
+    // 至少要有两处「同一句里既给又抢」，才叫这个人身上有两种相反行为
+    p.multi = both >= 2 && giveN >= 2 && takeN >= 2;
+    p.contradictory = p.multi;
+  });
+
+  // 6) 排序：主角在最前，其余按出现次数
+  rows.sort((a, b) => (b.isMe ? 1 : 0) - (a.isMe ? 1 : 0) || b.cnt - a.cnt);
+
+  // 代词归并：一篇里出现了「林晚」，那文中的「她」多半就是在说她。
+  // 把代词的次数加到唯一那个同性角色上，并在名字后面标注 ——
+  // 否则人物表里会出现「林晚」和「她」两行，看着像两个人在抢同一个人。
+  const FEMALE = /(林晚|婆婆|妈|姐姐|妹妹|小姑子|女儿|妻子|老婆|前妻|闺蜜|伴娘)/;
+  const MALE = /(前夫|老公|丈夫|爸|哥哥|弟弟|儿子|男友)/;
+  const named = rows.filter(r => !r.isMe);
+  if (named.length) {
+    ['她', '他'].forEach(t => {
+      const n = (text.match(new RegExp(t, 'g')) || []).length;
+      if (n < 3) return;
+      const pool = named.filter(r => (t === '她' ? FEMALE : MALE).test(r.name));
+      if (pool.length !== 1) return;          // 有多个同性角色时，代词指谁不确定，不归并
+      const host = pool[0];
+      host.cnt += n;
+      host.alias2 = t;                        // 渲染时显示成「林晚（她）」
+      host.merged = n;
+    });
+  }
+
+  return {
+    list: rows.slice(0, 8),
+    redundant: rows.filter(p => p.multi && !p.isMe).map(p => p.name),
+    isFirstPerson,
+  };
+}
+
+/* ---------- 7.7 伏笔与回收 ---------- */
+
+function trForeshadow(paras) {
+  const found = [];
+  const used = new Set();
+
+  // 1) 细节复用：同一个具体物件在前后两处出现，且第二次语义变了
+  //    OBJ 里刻意剔掉了「门、窗、灯」这类到处都是的背景物 —— 它们出现的次数多、
+  //    但从来不承载语义，报出来只会让作者以为自己在埋伏笔。
+  const OBJ = /(钥匙|手机|病历|房产证|合同|戒指|照片|截图|流水|账本|信封|平安扣|抽屉|手表|项链|镜子|伞|外套|烟盒)/g;
+  const objPos = {};
+  paras.forEach((p, i) => {
+    let m;
+    const re = new RegExp(OBJ.source, 'g');
+    while ((m = re.exec(p))) {
+      const o = m[1];
+      (objPos[o] = objPos[o] || []).push({ i, sent: trSents(p).find(s => s.includes(o)) || p.slice(0, 40) });
+    }
+  });
+  Object.keys(objPos).forEach(o => {
+    const list = objPos[o];
+    if (list.length < 2) return;
+    const a = list[0], b = list[list.length - 1];
+    // 同一段里出现两次不算「复用」—— 那是一次性提到，没有间隔就没有伏笔
+    if (b.i - a.i < 2) return;
+    used.add(o);
+    found.push({
+      v: o, at: a.i + 1, back: b.i + 1,
+      guess: '以为只是个随手提到的物件',
+      real: '同一个东西在关键处改变了含义',
+      type: '细节复用',
+      a: a.sent.slice(0, 36), b: b.sent.slice(0, 36),
+    });
+  });
+
+  // 2) 降级陈述 / 二手信息 / 反向真话 / 动作即证据
+  paras.forEach((p, i) => {
+    trSents(p).forEach(s => {
+      if (s.length < 6 || s.length > 70) return;
+      for (const t of TEAR_FORESHADOW) {
+        if (t.key === 'reuse' || t.key === 'invert') continue;
+        if (!t.test(s)) continue;
+        // 已经归到细节复用的物件不再重复报
+        if ([...used].some(o => s.includes(o))) return;
+        const key = t.key + s.slice(0, 8);
+        if (found.some(f => f.type === t.name && f.a === s.slice(0, 36))) continue;
+        found.push({
+          v: t.name, at: i + 1, back: null,
+          guess: t.key === 'downplay' ? '真的只是个无关紧要的交代'
+            : t.key === 'second' ? '只是个旁人的闲话'
+              : t.key === 'reverse' ? '角色在狡辩'
+                : '只是一个多余的小动作',
+          real: t.key === 'downplay' ? '其实埋的是后面反转要用的关键事实'
+            : t.key === 'second' ? '用第三人的嘴把真相提前说了，读者不信'
+              : t.key === 'reverse' ? '说的是实话，但当时没人信'
+                : '这个动作本身说明背后有一整件事',
+          type: t.name, a: s.slice(0, 36), b: '',
+        });
+        break;
+      }
+    });
+  });
+
+  // 3) 倒装伏笔：中后段出现「回忆 / 那年 / 后来才知道」把之前的事补全
+  paras.forEach((p, i) => {
+    if (i < paras.length * .15) return;
+    const m = p.match(/[^。！？\n]{0,20}(那年|那时候|多年前|以前|后来才知道|后来我才知道|事后|回想起来)[^。！？\n]{0,30}/);
+    if (!m) return;
+    if (found.some(f => f.type === '倒装伏笔' && f.a.slice(0, 8) === m[0].slice(0, 8))) return;
+    found.push({
+      v: '倒装伏笔', at: i + 1, back: null,
+      guess: '一开始读不出这是在补前情',
+      real: '回溯补述，把前面含糊的地方钉死',
+      type: '倒装伏笔', a: m[0].slice(0, 36), b: '',
+    });
+  });
+
+  // 4) 只埋不收：前 1/3 埋的凭据类物件，全文再没出现第二次
+  const early = paras.slice(0, Math.max(2, Math.floor(paras.length / 3)));
+  const CUE = /(合同|房产证|病历|流水|账本|判决书|名单|截图|转账|短信|备注)/g;
+  early.forEach((p, i) => {
+    let m;
+    const re = new RegExp(CUE.source, 'g');
+    while ((m = re.exec(p))) {
+      const o = m[1];
+      const total = (paras.join('').match(new RegExp(o, 'g')) || []).length;
+      if (total === 1) {
+        if (found.some(f => f.v === o)) continue;
+        found.push({
+          v: o, at: i + 1, back: null,
+          guess: '以为后面会有用',
+          real: '埋了没收 —— 这条线断了',
+          type: '断线', a: trSents(p).find(s => s.includes(o))?.slice(0, 36) || '', b: '', broken: true,
+        });
+      }
+    }
+  });
+
+  return found;
+}
+
+/* ---------- 7.8 文风指纹 ---------- */
+
+function trStyle(text, paras) {
+  const sents = trSents(text);
+  const lens = sents.map(s => CN(s)).filter(n => n > 0);
+  const avg = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
+  const shortN = lens.filter(n => n <= 12).length;
+  const shortRatio = lens.length ? shortN / lens.length : 0;
+  const longN = lens.filter(n => n >= 40).length;
+
+  // 高频词：先按标点和虚词把长串切开，再取 2~3 字的片段，
+  // 否则会切出「我是在婚」这种跨词边界的东西
+  const STOP = new Set(['的', '了', '我', '你', '他', '她', '是', '在', '不', '就', '和', '也', '都', '说', '着', '有', '这', '那', '一', '个', '上', '里', '到', '要', '会', '没', '还', '被', '把', '给', '对', '好', '又', '过', '得', '地', '很', '但是', '然后', '因为', '所以', '什么', '怎么', '一个', '这个', '那个', '我们', '你们', '他们', '自己', '时候', '现在', '知道', '觉得', '可以', '没有', '就是', '不是', '还是', '已经', '起来', '出来', '过来', '下来', '一样', '这样', '那样', '什么', '东西', '事情', '时候']);
+  const STOP_CH = '的了是我你他她不在就也和都说着有这那个上里到要会没还被把给对好又过得地很但然因为所以什么怎一个我你们';
+  const freq = {};
+  const chunks = text.split(/[^\u4e00-\u9fa5]+/);
+  chunks.forEach(ch => {
+    if (ch.length < 2) return;
+    for (let len = 3; len >= 2; len--) {
+      for (let i = 0; i + len <= ch.length; i++) {
+        const w = ch.slice(i, i + len);
+        if (STOP.has(w)) continue;
+        // 首尾是虚词就不算一个词
+        if (STOP_CH.includes(w[0]) || STOP_CH.includes(w[w.length - 1])) continue;
+        freq[w] = (freq[w] || 0) + 1;
+      }
+    }
+  });
+  // 只留出现 >= 3 次的，且更长的词优先（避免「房子」和「那套房子」同时上榜）
+  const rawTop = Object.entries(freq).filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]);
+  const top = [];
+  rawTop.forEach(([w, n]) => {
+    if (top.length >= 3) return;
+    if (top.some(t => t.w.includes(w) || w.includes(t.w))) return;
+    top.push({ w, n });
+  });
+  // 实在没有高频词，就取出现最多的 2 字词
+  if (!top.length) {
+    const any = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    any.forEach(([w, n]) => top.push({ w, n }));
+  }
+
+  // 视角
+  const meN = (text.match(/我/g) || []).length;
+  const thirdN = (text.match(/[他她][们]?/g) || []).length;
+  const pov = meN > thirdN * 1.5 ? '第一人称' : thirdN > meN * 1.5 ? '第三人称' : '第一人称偏多';
+  // 视角破例：第一人称里出现「他不知道 / 她心里想」这类上帝视角
+  const breach = [];
+  if (pov.startsWith('第一')) {
+    const re = /[他她](心里|心想|暗自|偷偷地想|不知道|没意识到|并不知道)[^。！？\n]{0,18}/g;
+    let m;
+    while ((m = re.exec(text))) breach.push(m[0].slice(0, 22));
+  }
+
+  // 对话占比
+  // 网文大量用「我说：xxx」「他说，xxx」这种不带引号的转述，也得算进去，
+  // 否则一篇通篇对白的稿子会被算成「几乎不用对白」（实测 34% 被算成 2%）
+  // 用「我/他/她/称谓 + 说」而不是 `[汉字]{2}` —— 后者会吃掉句首的「那天晚上我」
+  const DLG_SUBJ = '(我|他|她|妈|我妈|爸|我爸|婆婆|阿姨|小姑子|律师|法官|医生|警察|班主任|老板|经理|老公|前夫|闺蜜|伴娘)';
+  const quotedRe = /[“「"][^”」"]{2,}[”」"]/g;
+  const toldRe = new RegExp(`${DLG_SUBJ}(说|问|答|道|回|喊|吼|骂)[：:，,]?[^。！？\\n]{2,40}`, 'g');
+  const dlgChars = CN((text.match(quotedRe) || []).join(''));
+  const toldChars = CN((text.match(toldRe) || []).join(''));
+  const dlgTotal = dlgChars + toldChars;
+  const dlgRatio = CN(text) ? dlgTotal / CN(text) : 0;
+  // 说明占比里有多少是「带引号」的，用来区分对话形态
+  const dlgQuoted = CN(text) ? dlgChars / CN(text) : 0;
+  // 对话是在推进还是交代：带引号的行 + 转述里带对抗词的都算推进
+  const dlgLines = (text.match(quotedRe) || []).slice(0, 200);
+  const plusTold = (text.match(toldRe) || []);
+  const allDlg = dlgLines.concat(plusTold);
+  const pushN = allDlg.filter(s => /[？?]|(不|别|滚|敢|凭什么|签|走|离婚|分手|还|必须|给我|取消|还给我)/.test(s)).length;
+  const dlgMode = dlgRatio < .08 ? '几乎不用对白'
+    : pushN / Math.max(1, allDlg.length) > .45 ? '推进剧情' : '交代信息';
+
+  // 感官
+  const senses = Object.keys(TEAR_SENSE).map(k => {
+    const n = (text.match(TEAR_SENSE[k].re) || []).length;
+    const ex = (text.match(new RegExp(`[^。！？\\n]{0,14}${TEAR_SENSE[k].re.source.replace(/\/g$/, '')}[^。！？\\n]{0,14}`, 'g')) || [])[0] || '';
+    return { key: k, name: TEAR_SENSE[k].name, n, ex: ex.slice(0, 30) };
+  }).sort((a, b) => b.n - a.n);
+  const senseTop = senses[0];
+  const senseWin = senseTop && senseTop.n >= 3 ? senseTop.name : '不明显';
+
+  // 句子节奏：短句多 = 快，长句多 = 慢
+  // 阈值按网文标定 —— 网文平均句长 15 字左右，25 字以上就算拖。
+  // 用「平均句长」和「短句占比」两个指标一起判，单看一个会误判
+  // （这篇 avg 18.9 / 短句 23%，按旧阈值被判成「慢，长句多」，其实一句超长句都没有）
+  const pace = avg <= 14 || shortRatio >= .5 ? '快，靠短句推'
+    : avg >= 28 ? '慢，长句多'
+      : shortRatio >= .3 ? '中速偏快，长短交错' : '中速，偏叙述';
+
+  return { avg: +avg.toFixed(1), shortRatio: +shortRatio.toFixed(2), longN, top, pov, breach: breach.slice(0, 3), dlgRatio: +dlgRatio.toFixed(2), dlgQuoted: +dlgQuoted.toFixed(2), dlgMode, senses, senseTop: senseWin, pace, nSents: lens.length };
+}
+
+/* ---------- 7.9 平台标准 ---------- */
+
+const TEAR_PLATFORM = {
+  zhihu: {
+    name: '知乎盐选',
+    focus: '导语钩子 + 信息差',
+    checks: ['前 300 字有没有把人钉住', '读者和主角之间的信息差在不在', '每节结尾有没有钩子'],
+  },
+  fanqie: {
+    name: '番茄短篇',
+    focus: '爽点密度 + 节奏',
+    checks: ['多久出第一个爽点', '爽点之间的间隔有多长', '有没有连续两节不推进'],
+  },
+  jinjiang: {
+    name: '晋江/长佩',
+    focus: '人物弧光 + 情感浓度',
+    checks: ['人物有没有变化', '情感浓度是不是一直在线', '配角是不是只服务于主角'],
+  },
+  wechat: {
+    name: '公众号/散文',
+    focus: '叙述视角 + 情绪落点',
+    checks: ['第一句能不能立住', '情绪的落点在不在最后', '有没有从具体走到抽象'],
+  },
+  none: { name: '不确定', focus: '通用结构', checks: ['骨架成不成立', '每一节有没有功能', '结尾有没有留住人'] },
+};
+
+/* ---------- 7.10 主分析 ---------- */
+
+function tearText(text, opt) {
+  const paras = trParas(text);
+  const n = paras.length;
+  const chars = CN(text);
+  const secs0 = trSections(paras);
+  const secs = trShape(secs0, paras);
+  // 功能判断看的是「第几节，共几节」，不是段落数 —— 传错会让「最后一节」永远判不出来
+  const ctx = { n: secs.length, chars, nPara: n };
+  // 人名先于骨架表算 —— 每一节的「新人物」都要靠全文人名表来核对
+  const names = trFindNames(text);
+
+  // —— 第 1 步：骨架表 ——
+  const seenInfo = new Set();
+  const skeleton = secs.map((s, i) => {
+    const main = s.paras.join('');
+    const f = trFuncOf(main, i, ctx);
+    const hook = trHookOf(s, i === secs.length - 1);
+    const info = trInfoGain(s, seenInfo, names);
+    const emo = trEmotion(s);
+    return {
+      i: i + 1, title: s.title, chars: s.chars, share: s.share,
+      func: f.name, funcKey: f.key, funcDesc: f.desc, soft: !!f.soft,
+      info, emo, hook,
+      first: s.paras[0].slice(0, 32),
+    };
+  });
+
+  // 情绪落点改成全文内部排名：最高的那 1/3 是「顶格」，最低的 1/3 是「压低」。
+  // 绝对阈值会让「一篇平缓的稿子」全部落在压低档，读者看不出哪一节最使劲。
+  const emoSorted = [...skeleton].sort((a, b) => a.emo.score - b.emo.score);
+  const nS = emoSorted.length;
+  emoSorted.forEach((s, k) => {
+    // 只有一节时按中性报，不硬分三档
+    const lv = nS < 3 ? 'mid' : k >= nS * 2 / 3 ? 'high' : k < nS / 3 ? 'low' : 'mid';
+    s.emo.lv = lv;
+    s.emo.name = lv === 'high' ? '顶格' : lv === 'mid' ? '上扬' : '压低';
+  });
+  // 但「揭底 → 揭底」是网文最常见的递进结构：先揭一层（照片/合同），
+  // 再揭更深一层（备注栏的字不一样）。这不叫重复，叫揭开洋葱。
+  // 判据：两节揭的信息类型是否有重合 —— 完全同类才算撞车。
+  const dupSec = [];
+  for (let i = 1; i < skeleton.length; i++) {
+    const a = skeleton[i - 1], b = skeleton[i];
+    if (a.funcKey !== b.funcKey || a.funcKey === 'clash') continue;
+    if (a.funcKey === 'reveal') {
+      // 两节各自揭了哪些类别的凭据（数字/凭据/法律动作/新人物）
+      const ta = new Set(a.info.map(x => x.type));
+      const tb = new Set(b.info.map(x => x.type));
+      const overlap = [...tb].filter(t => ta.has(t)).length;
+      // 重叠不到一半，说明揭的是另一层东西 → 递进，不报
+      if (tb.size && overlap / tb.size < .5) continue;
+      // 完全没揭到新东西（两节都是软信息）→ 那才是真的原地打转
+      if (!tb.size) continue;
+    }
+    dupSec.push({ a: a.i, b: b.i, func: b.func });
+  }
+
+  // 无钩子的节
+  const noHook = skeleton.filter(s => !s.hook.key);
+
+  // —— 篇幅公式 ——
+  const formula = skeleton.map(s => `${Math.round(s.share * 100)}% ${s.func}`);
+
+  // 段落号 → 节号。人物表和伏笔表都要用，所以放在前面定义。
+  const paraToSec = p => {
+    let acc = 0;
+    for (let i = 0; i < secs.length; i++) {
+      acc += secs[i].paras.length;
+      if (p < acc) return i + 1;
+    }
+    return secs.length;
+  };
+
+  // —— 第 2 步：人物 ——
+  // trPeople 算出来的是【段落号】，但报告里说的是【第几节】。
+  // 不换算就会出现「第 1—44 节」这种全文只有 4 节的荒谬输出。
+  const people0 = trPeople(paras, names);
+  const people = {
+    ...people0,
+    list: people0.list.map(p => ({
+      ...p,
+      first: paraToSec(Math.max(0, p.first - 1)),
+      last: paraToSec(Math.max(0, p.last - 1)),
+    })),
+  };
+
+  // —— 第 3 步：伏笔 ——
+  const fores = trForeshadow(paras).map(f => ({
+    ...f,
+    at: paraToSec(f.at - 1),
+    back: f.back ? paraToSec(f.back - 1) : null,
+    atPara: f.at, backPara: f.back,
+  })).filter(f => {
+    // 换算成节号之后，同节内部的两次出现不算伏笔 —— 伏笔靠的是间隔
+    if (f.back && f.back === f.at) return false;
+    return true;
+  });
+
+  // —— 第 5 步：文风 ——
+  const style = trStyle(text, paras);
+
+  // —— 第 0 步：值不值得拆 ——
+  const weird = Object.keys(TEAR_SICK).reduce((a, k) => a + (text.match(TEAR_SICK[k]) || []).length, 0);
+  const sceneCount = paras.filter(p => /[“「"]/.test(p) || (/(走|跑|推|拉|拿|站|坐|递|转身)/.test(p) && /(门|屋|桌|窗|街|院|床|椅|楼)/.test(p))).length;
+  const sceneRatio = n ? sceneCount / n : 0;
+  const hasMachine = skeleton.some(s => ['reveal', 'flip'].includes(s.funcKey));
+  const hasBurst = skeleton.some(s => s.funcKey === 'burst');
+
+  // 核心机关：按结构特征判定，不是猜剧情
+  let machine;
+  if (hasMachine && people.redundant.length) machine = '靠「有人一直在演」抓住读者 —— 读者比主角多知道一层';
+  else if (hasMachine) machine = '靠一次揭底抓住读者 —— 前面读到的意思被整体改写';
+  else if (hasBurst && skeleton.filter(s => s.funcKey === 'clash').length >= 2) machine = '靠连续正面对撞抓住读者 —— 冲突一场接一场，读者停不下来';
+  else if (sceneRatio >= .5) machine = '靠现场感抓住读者 —— 每一段都发生在一个具体的地方';
+  else machine = '没有明显的机关 —— 结构上是平的';
+
+  // 最强一招：取最像「可迁移技法」的那一节
+  let best = null, bestScore = -1;
+  skeleton.forEach(s => {
+    let sc = 0;
+    if (s.hook.key === 'flip') sc += 3;
+    if (s.hook.key === 'suspense') sc += 2;
+    if (s.funcKey === 'reveal') sc += 2.5;
+    if (s.funcKey === 'flip') sc += 3;
+    if (s.hook.soft) sc -= 1;
+    sc += s.emo.score * .15;
+    if (sc > bestScore) { bestScore = sc; best = s; }
+  });
+  const bestMove = best ? {
+    sec: best.i,
+    name: best.funcKey === 'reveal' ? '揭底把前文整体改写'
+      : best.funcKey === 'flip' ? '反转换掉读者的判断'
+        : best.hook.key === 'flip' ? '用反转当钩子收节'
+          : best.hook.key === 'suspense' ? '用悬念卡住节尾'
+            : '用对撞把节推下去',
+    why: best.funcDesc,
+  } : null;
+
+  // 最弱一环
+  const weak = [];
+  if (weird >= 2) weak.push({ k: '小说腔', d: `出现 ${weird} 处套话/说书腔，这些词是「写出来的」痕迹，别学` });
+  if (dupSec.length) weak.push({ k: '原地打转', d: `第 ${dupSec[0].a} 节和第 ${dupSec[0].b} 节都在「${dupSec[0].func}」，功能重复` });
+  if (noHook.length) weak.push({ k: '节尾没钩子', d: `第 ${noHook.slice(0, 3).map(s => s.i).join('、')} 节结尾是平的，读者容易在这一节离开` });
+  const broken = fores.filter(f => f.broken);
+  if (broken.length) weak.push({ k: '埋了不收', d: `「${broken.slice(0, 2).map(f => f.v).join('」「')}」埋下去再没出现，这条线断了` });
+  if (style.breach.length) weak.push({ k: '视角破例', d: `第一人称里出现 ${style.breach.length} 处上帝视角，比如「${style.breach[0]}」` });
+  if (people.redundant.length) weak.push({ k: '角色冗余', d: `「${people.redundant[0]}」身上同时有两种相反行为，可以拆成两个人，或者砍掉一个` });
+
+  // 值不值得拆
+  const worth = (hasMachine || hasBurst) ? 'worth' : sceneRatio < .2 && !hasMachine ? 'no' : 'partial';
+
+  return {
+    raw: text, chars, nParas: n, nSecs: skeleton.length,
+    skeleton, formula, dupSec, noHook,
+    people, fores,
+    style,
+    sceneRatio,
+    machine, bestMove, weak,
+    worth,
+    platform: opt.platform || 'zhihu',
+    depth: opt.depth || 'std',
+    goal: opt.goal || '',
+    weird,
+  };
+}
+
+/* ---------- 7.11 技法库（给公式，不给句子） ---------- */
+
+// 每条技法：名称 / 原文怎么用 / 公式 / 适用赛道
+// 只用结构特征触发，不编造剧情
+const TEAR_TECH = [
+  {
+    k: 'hookFlip', name: '节尾翻转当钩子',
+    test: r => r.skeleton.filter(s => s.hook.key === 'flip').length >= 1,
+    used: r => {
+      const s = r.skeleton.find(x => x.hook.key === 'flip');
+      return `第 ${s.i} 节收在「${s.hook.last.slice(0, 20)}」这种把话翻过来的句子上`;
+    },
+    formula: '让读者在这一节建立判断 → 在最后一句把判断的对象换掉（不是加新信息，是换主语/换动机）→ 不给解释就断节。读者必须往下读才能确认自己有没有被骗。',
+    track: '悬疑、复仇、婚恋',
+  },
+  {
+    k: 'infoHold', name: '信息差前置',
+    test: r => r.skeleton.some(s => s.funcKey === 'reveal') && r.people.list.some(p => p.contradictory),
+    used: () => '有一节专门用来「揭底」，而揭底前每个角色都在按另一套逻辑行事',
+    formula: '先让 A 当着读者的面做一件不合理的事 → 读者以为 A 是坏的 → 中段揭示 A 做的每件事都有一个读者不知道的理由 → 重读一遍时会发现 A 从来没说过一句假话。',
+    track: '知乎盐选、反套路、家庭伦理',
+  },
+  {
+    k: 'objectReuse', name: '同一物件的语义反转',
+    test: r => r.fores.some(f => f.type === '细节复用'),
+    used: r => {
+      const f = r.fores.find(x => x.type === '细节复用');
+      return `「${f.v}」在第 ${f.at} 节是闲笔，第 ${f.back} 节变成关键证据`;
+    },
+    formula: '选一个日常物件，第一次出现时只作为背景（不给特写、不解释来源）→ 中间至少隔两节不再提 → 第二次出现时让它承载一个读者没想到的功能（证明/证伪/认人）→ 只写物件的状态变化，不写「我忽然明白了」。',
+    track: '通吃',
+  },
+  {
+    k: 'downplay', name: '降级陈述（把关键写成闲笔）',
+    test: r => r.fores.some(f => f.type === '降级陈述'),
+    used: r => {
+      const f = r.fores.find(x => x.type === '降级陈述');
+      return `第 ${f.at} 节用「${f.a}」这种口气把关键事实带过去`;
+    },
+    formula: '把最关键的一条事实，用「顺便说一句」「也就那样」「当时谁也没在意」的口气塞进一个不重要的场景里 → 关键句不能单独成段，必须挂在一个动作后面 → 回收时只字不提这是一句伏笔。',
+    track: '悬疑、现实家庭',
+  },
+  {
+    k: 'actionProof', name: '动作即证据',
+    test: r => r.fores.some(f => f.type === '动作即证据'),
+    used: () => '有人一句话没说，但手上的动作已经把答案给了',
+    formula: '要表达「他心里有事」，不写心理，写一个不该出现的动作（手停在半空 / 先看了一眼门 / 把东西往里推了推）→ 动作必须是这个人「平时不会做」的 → 旁人可以注意到，但不要点破。',
+    track: '通吃',
+  },
+  {
+    k: 'secondHand', name: '二手信息埋线',
+    test: r => r.fores.some(f => f.type === '二手信息'),
+    used: () => '关键信息是从第三者嘴里说出来的，而不是当事人',
+    formula: '让一个不重要的人在闲聊里说出一条真相 → 主角当时不信或不以为意 → 后段由当事人自己确认时，读者会回头翻那句闲话。第三者说完必须消失，不能返场解释。',
+    track: '悬疑、复仇',
+  },
+  {
+    k: 'shortBurst', name: '短句压强',
+    test: r => r.style.shortRatio >= .45,
+    used: r => `短句（≤12 字）占 ${Math.round(r.style.shortRatio * 100)}%，平均句长 ${r.style.avg} 字`,
+    formula: '在情绪最高点，把这一段的句子长度砍到平时的一半 → 连续三句不超过 12 字 → 第四句再放开。短句不承载信息，只承载节奏；信息全放在长句里。',
+    track: '番茄短篇、复仇',
+  },
+  {
+    k: 'sensory', name: '单一感官锚定',
+    test: r => r.style.senses[0] && r.style.senses[0].n >= 4,
+    used: r => `全篇偏向${r.style.senseTop}，比如「${(r.style.senses[0].ex || '').slice(0, 18)}」`,
+    formula: '一篇只锚定一种感官，反复出现同一种 → 换场时同一种感官再现，读者会自动接上「还是同一件事」→ 其他感官只在转折处出现一次，作为信号。',
+    track: '公众号、散文',
+  },
+  {
+    k: 'deadEnd', name: '先给绝路再给出口',
+    test: r => r.skeleton.filter(s => s.funcKey === 'escalate' || s.funcKey === 'clash').length >= 2,
+    used: () => '连续两节都在加压/对撞，逼到读者开始替主角算退路',
+    formula: '连续两节只做一件事：把主角的选择一个个删掉 → 每删掉一个都要有一个具体的人或物（不是「情况越来越糟」这种抽象描述）→ 删到只剩一个读者认为「绝对不可能」的选项 → 主角选它。',
+    track: '番茄短篇、复仇、婚恋',
+  },
+];
+
+
+VIEWS.tear = () => {
+  const frag = el('div', 'page');
+  frag.innerHTML = `
+    <div class="pg-head"><div><div class="pg-title">拆文台</div>
+      <div class="pg-sub">拆骨架，不抄桥段 —— 把一篇爆款拆成能套到你自己题材上的结构</div></div>
+      <button class="btn btn-primary" id="trRun">${I.scan} 开始拆解</button></div>
+    <div class="pg-body">
+      <button class="btn btn-sec" id="trBack" style="display:none;margin-bottom:14px">← 改原文</button>
+      <div class="analyze-grid">
+        <div class="an-input" id="trInput">
+          <div class="section-label" style="margin-top:0">原文<span class="an-input-n" id="trCount">0 字</span></div>
+          <textarea class="ta" id="trText" placeholder="把要拆的文章粘进来…&#10;&#10;短篇建议整篇贴。段落之间空一行，骨架表会按段落切节。&#10;有小标题的话，会按小标题切。"></textarea>
+          <div class="an-opts">
+            <label><span>平台</span>
+              <select class="sel" id="trPlatform">
+                <option value="zhihu">知乎盐选</option>
+                <option value="fanqie">番茄短篇</option>
+                <option value="jinjiang">晋江/长佩</option>
+                <option value="wechat">公众号/散文</option>
+                <option value="none">不确定</option>
+              </select>
+            </label>
+            <label><span>深度</span>
+              <select class="sel" id="trDepth">
+                <option value="std">标准（推荐）</option>
+                <option value="fast">速拆（只出骨架）</option>
+                <option value="deep">精拆（多给仿写）</option>
+              </select>
+            </label>
+          </div>
+          <div class="an-opts">
+            <label style="flex:1"><span>学习者目标</span>
+              <input class="sel tr-goal-input" id="trGoal" placeholder="想写什么类型？填了会多给一份套用建议" />
+            </label>
+          </div>
+          <div class="an-input-bar">
+            <button class="btn btn-sec" id="trClear">${I.trash} 清空</button>
+            <button class="btn btn-sec" id="trLoad">${I.empty} 读示例</button>
+          </div>
+        </div>
+        <div id="trOut">
+          <div class="empty">${I.empty}<div class="empty-t">还没有结果</div><div class="empty-d">粘贴文章后点击「开始拆解」</div></div>
+        </div>
+      </div>
+    </div>`;
+  setTimeout(() => {
+    const ta = frag.querySelector('#trText');
+    const cnt = frag.querySelector('#trCount');
+    const inputWrap = frag.querySelector('#trInput');
+    const out = frag.querySelector('#trOut');
+    const backBtn = frag.querySelector('#trBack');
+    const pfSel = frag.querySelector('#trPlatform');
+    const dpSel = frag.querySelector('#trDepth');
+    const goalIn = frag.querySelector('#trGoal');
+    const upd = () => { cnt.textContent = (CN(ta.value) || 0).toLocaleString() + ' 字'; };
+    ta.addEventListener('input', upd);
+    upd();
+
+    const run = () => {
+      const t = ta.value.trim();
+      if (CN(t) < 200) { toast('至少 200 字才拆得出骨架'); return; }
+      const r = tearText(t, { platform: pfSel.value, depth: dpSel.value, goal: goalIn.value.trim() });
+      renderTear(out, r);
+      if (window.innerWidth <= 560) {
+        inputWrap.classList.add('min');
+        backBtn.style.display = '';
+        // 输入区已经折叠，顶部的「开始拆解」就没有对象了 —— 留着只会和「改原文」挤在一起
+        const runBtn = document.querySelector('#trRun');
+        if (runBtn) runBtn.style.display = 'none';
+        const wb = $('#winBody');
+        if (wb) wb.scrollTop = 0;
+      } else {
+        const wb = $('#winBody');
+        if (wb) wb.scrollTop = 0;
+      }
+    };
+    backBtn.onclick = () => {
+      inputWrap.classList.remove('min');
+      backBtn.style.display = 'none';
+      const rb = frag.querySelector('#trRun');
+      if (rb) rb.style.display = '';
+      ta.focus();
+    };
+    frag.querySelector('#trRun').onclick = run;
+    frag.querySelector('#trClear').onclick = () => {
+      ta.value = ''; upd();
+      inputWrap.classList.remove('min');
+      backBtn.style.display = 'none';
+      const rb = frag.querySelector('#trRun');
+      if (rb) rb.style.display = '';
+      out.innerHTML = '<div class="empty">' + I.empty + '<div class="empty-t">还没有结果</div><div class="empty-d">粘贴文章后点击「开始拆解」</div></div>';
+    };
+    frag.querySelector('#trLoad').onclick = () => {
+      ta.value = TEAR_SAMPLE; upd();
+      // 示例是内置的，读完直接拆 —— 让用户再点一次「开始拆解」是多余的一步
+      run();
+      toast('已载入示例并拆好了');
+    };
+  }, 20);
+  return frag;
+};
+
+
+/* ---------- 7.13 页面 ---------- */
+
+const TEAR_SAMPLE = `我是在婚礼前三个小时才知道，新郎那边还开着一桌。
+
+酒店三楼，我穿着婚纱站在走廊尽头，听见婆婆的声音从包间里漏出来——"她那边的亲戚先别安排，等客人走了再说。"
+
+我手里的捧花掉在地上，玫瑰砸在地毯上，一点声音都没有。
+
+伴娘小周扯了扯我的袖子，说你别冲动。我说我不冲动，我就是想听清楚。
+
+我推开门。满桌的人在看我，筷子悬在半空，酒还没倒。婆婆脸上那点笑僵住了，随即又活过来，说你怎么来了，快回去补妆。
+
+我说阿姨，那一桌是谁。
+
+她说不就是老家来的几个亲戚嘛，坐不下。
+
+我说坐不下，所以让我爸妈先别进来。
+
+她说你这孩子怎么这么不懂事，今天是你的好日子。
+
+我说好日子，就是让我爸妈站在门外等着？
+
+桌上有人开始劝，说都是一家人，别在这儿闹。我说一家人，那就把我爸妈叫进来一起吃。
+
+婆婆的脸沉下来了，她把手里的酒杯往桌上一放，说你要是这样，这婚今天别结了。
+
+我说行。
+
+我转身回走廊，把裙摆提起来，走得很快。小周追上来，说你疯了吗，宾客都到了。
+
+我说宾客是来看婚礼的，不是来看我爸妈被关在外面的。
+
+我走到电梯口，看见我妈站在那儿。她穿着那件穿了十年的外套，手里拎着一袋糖。
+
+她说她不敢进去，怕给我丢人。
+
+我蹲下来，把她手里的袋子接过来，说妈，我们回家。
+
+后来我在朋友圈看到她发的照片，婚礼照常举行了，只是新娘换了人。
+
+照片上她笑得很开心，新郎站在旁边，手里拿着一把钥匙。
+
+那把钥匙我认得，是那套房子的。
+
+我从来没跟任何人说过，那套房子的首付，是我出的。
+
+钱是我一分一分攒的，攒了四年。我对他说，首付我出，房本写我们俩的名字。
+
+他说好。
+
+房本上写的只有他一个人的名字。
+
+这件事我是在签完合同三个月后才知道的。那天我去办居住证，需要房产证复印件，他把本子递给我的时候，我看见上面只有他一个名字。
+
+我问他为什么。
+
+他说，因为他出的是月供。
+
+我说月供一个月两千四，首付八十万。
+
+他说，那你要不要算一下，四年我付了多少。
+
+我没算。我只是把本子还给他，说那这婚不结了。
+
+他笑了，说你一个女孩子，钱都花了，还闹什么。
+
+那天晚上我一个人坐在出租屋里，把那张合同翻出来看了一遍。合同最后一页的备注栏里，有一行很小的字：产权归出资方所有。
+
+字是打印的，不是我签的。
+
+我看了很久，才发现那行字用的字体，和前面不一样。
+
+我给他打电话，问他那行字是谁加的。
+
+他说，你签之前就有的。
+
+我说我没看见。
+
+他说，你自己不看，怪我？
+
+我把电话挂了。
+
+第二天我去找了律师。律师说，只要能证明首付是我出的，这行字就站不住。
+
+我把四年的转账记录全打出来，三十七笔，一笔不落。
+
+律师看完说，稳了。
+
+开庭那天他来了，穿了西装，坐在对面。他看了我一眼，很平静。
+
+法官问他，备注栏那行字是不是后加的。
+
+他说不是。
+
+法官把合同递给他，说请你仔细看这一页的字体。
+
+他低头看了很久，然后笑了。
+
+他说，是我加的。
+
+庭上安静了几秒钟。
+
+他抬起头，看着我，说你还记得吗，签合同那天你说你信我。
+
+我说我记得。
+
+他说，我也信过人。
+
+一直到最后，他都没有看我第二眼。
+
+那套房子判给了我。我拿到钥匙那天，站在门口，没有开门。
+
+我把钥匙寄给了他。
+
+信封里只放了一句话：钱我拿回来了，你留着吧。`;
+
+
+/* ---------- 7.12 渲染 ---------- */
+
+// 拆文报告用 tr- 前缀，和审稿官的 sr- 分开，样式互不干扰
+function trLv(s) {
+  return s >= 8 ? 'good' : s >= 5 ? 'mid' : s >= 3 ? 'warn' : 'bad';
+}
+
+function trCopyBtn(id, text) {
+  return `<button class="tr-copy" data-copy="${id}">复制</button>`;
+}
+
+function renderTear(box, r) {
+  const pf = TEAR_PLATFORM[r.platform] || TEAR_PLATFORM.zhihu;
+  const S = r.skeleton;
+
+  /* ── 第 0 步：值不值得拆 ── */
+  const worthMap = {
+    worth: { lv: 'good', t: '值得拆', d: '结构上有可迁移的机关，拆出来的公式能用在别的题材上。' },
+    partial: { lv: 'mid', t: '可以拆，但只拆骨架', d: '结构不算精巧，骨架和文风还能学，技法库的价值有限。' },
+    no: { lv: 'bad', t: '不建议拆', d: '结构不成立（没有机关、也没有现场），拆出来只有段落划分，学不到东西。' },
+  };
+  const W = worthMap[r.worth];
+
+  /* ── 骨架表 ── */
+  const skRows = S.map(s => {
+    const info = s.info.length
+      ? s.info.slice(0, 3).map(i => i.type === '无增量'
+        ? `<span class="tr-inf-weak">${esc(i.v)}</span>`
+        : `<em class="tr-inf-t">${esc(i.type)}</em>${esc(i.v)}`).join('　')
+      : '<span class="tr-none">这一节没有硬信息</span>';
+    const hook = s.hook.key
+      ? `<span class="tr-hook tr-hook-${s.hook.key}">${esc(s.hook.name)}</span>`
+      : `<span class="tr-hook tr-hook-none">无钩子</span>`;
+    return `<tr>
+      <td class="tr-pt">${s.i}${s.title ? `<span>${esc(s.title.slice(0, 8))}</span>` : ''}</td>
+      <td><b class="tr-fn">${esc(s.func)}</b>${s.soft ? '<i class="tr-soft" title="信号弱，按结构推断">?</i>' : ''}</td>
+      <td class="tr-desc">${esc(s.funcDesc)}</td>
+      <td class="tr-inf">${info}</td>
+      <td><span class="tr-emo tr-emo-${s.emo.lv}">${s.emo.name}</span></td>
+      <td>${hook}</td>
+    </tr>`;
+  }).join('');
+
+  /* ── 篇幅公式 ── */
+  const totalShare = S.reduce((a, s) => a + s.share, 0) || 1;
+  const barSegs = S.map((s, i) => `<i style="flex:${Math.max(1, s.share * 100)}" class="tr-seg tr-seg-${i % 6}" title="${esc(s.func)} ${Math.round(s.share * 100)}%"></i>`).join('');
+  const formulaLine = S.map(s => `${Math.round(s.share * 100)}% ${s.func}`).join(' / ');
+
+  /* ── 人物表 ── */
+  const pplRows = r.people.list.slice(0, 8).map(p => {
+    const beh = p.beh.length ? p.beh.join('、') : (p.isMe ? '承受、做出选择' : '说话');
+    // 代词归并过的角色，名字后面挂一个「含 N 处『她』」的注，
+    // 让作者知道表里的次数是怎么算出来的，不是凭空多出来的人
+    const merge = p.merged ? `<i class="tr-merged" title="文中 ${p.merged} 处「${p.alias2}」计入此人">含${p.merged}处「${esc(p.alias2)}」</i>` : '';
+    return `<tr>
+      <td><b>${esc(p.name)}</b>${p.isMe ? '<i class="tr-me">我</i>' : ''}${merge}</td>
+      <td><span class="tr-role">${esc(p.role.name)}</span></td>
+      <td class="tr-desc">${esc(beh)}</td>
+      <td><div class="tr-fill" data-fill="mot-${esc(p.name)}" contenteditable="true" data-ph="填：他真正想要什么"></div></td>
+      <td>${p.cnt >= 2 ? `第 ${p.first}—${p.last} 节` : `第 ${p.first} 节`}</td>
+    </tr>`;
+  }).join('');
+
+  /* ── 伏笔表 ── */
+  const fsRows = r.fores.length ? r.fores.slice(0, 10).map(f => `<tr>
+      <td class="tr-at"><b>${esc(f.v)}</b>${f.broken ? '<i class="tr-broken">断线</i>' : ''}</td>
+      <td class="tr-at">第 ${f.at} 节</td>
+      <td class="tr-at">${f.back ? `第 ${f.back} 节` : (f.broken ? '<span class="tr-none">未回收</span>' : '<span class="tr-none">自己填</span>')}</td>
+      <td class="tr-desc">${esc(f.guess)}</td>
+      <td class="tr-desc">${esc(f.real)}</td>
+      <td><span class="tr-tech">${esc(f.type)}</span></td>
+    </tr>`).join('') : `<tr><td colspan="6" class="tr-none" style="text-align:center;padding:18px">没找到明显的伏笔结构。这篇可能不是靠伏笔抓人的 —— 换一种机关去看（对撞、爽点、人物弧光）。</td></tr>`;
+
+  /* ── 技法库 ── */
+  const techs = TEAR_TECH.filter(t => {
+    try { return t.test(r); } catch { return false; }
+  }).slice(0, 7);
+  const techHtml = techs.map((t, i) => `
+    <div class="tr-tech-item">
+      <div class="tr-tech-h"><span class="tr-tech-n">${String(i + 1).padStart(2, '0')}</span><b>${esc(t.name)}</b><span class="tr-track">${esc(t.track)}</span></div>
+      <div class="tr-tech-r"><span>原文怎么用</span><p>${esc(t.used(r))}</p></div>
+      <div class="tr-tech-f"><span>公式</span><p>${esc(t.formula)}</p></div>
+    </div>`).join('');
+
+  /* ── 文风指纹 ── */
+  const st = r.style;
+  const senseMax = Math.max(1, ...st.senses.map(s => s.n));
+
+  /* ── 仿写（精拆才有） ── */
+  const drill = r.depth === 'deep' ? `
+    <div class="tr-step-h"><span>第六步</span>仿写任务<em>由浅到深，逐个做</em></div>
+    <div class="tr-drill">
+      <div class="tr-drill-item"><div class="tr-drill-lv">结构级</div>
+        <p class="tr-drill-t">只套骨架，换成你的题材，写 800 字。</p>
+        <p class="tr-drill-l"><b>限制</b>不许用这篇的人物关系、不许用它的场景、不许出现它任何一个关键物件。</p>
+        <p class="tr-drill-l"><b>验收</b>写完后逐节对照：你这篇的每一节，功能定位和它是否能一一对上？有一个对不上，说明你其实没套住。</p></div>
+      <div class="tr-drill-item"><div class="tr-drill-lv">技法级</div>
+        <p class="tr-drill-t">只练一条技法（建议「${esc(techs[0] ? techs[0].name : '降级陈述')}」），在同一场景里写 3 个版本。</p>
+        <p class="tr-drill-l"><b>限制</b>三个版本的场景、人物、事件必须完全一样，只改技法这一处。</p>
+        <p class="tr-drill-l"><b>验收</b>把三个版本给一个没读过的人看，他能指出哪一版「最自然」，但说不出为什么 —— 就练成了。</p></div>
+      <div class="tr-drill-item"><div class="tr-drill-lv">反写级</div>
+        <p class="tr-drill-t">把这篇的核心机关反过来写一遍：读者以为 A，实际是反 A。</p>
+        <p class="tr-drill-l"><b>限制</b>骨架不能动，只把「谁在演」换一个人。</p>
+        <p class="tr-drill-l"><b>验收</b>换个位置之后，前面每一节的伏笔还能收得回来 —— 收不回来，说明原结构是硬凑的。</p></div>
+    </div>` : '';
+
+  /* ── 学习者目标（填了才出） ── */
+  const goalHtml = r.goal ? `
+    <div class="tr-step-h"><span>套用建议</span>为「${esc(r.goal)}」挑可用的部分<em>只在填了目标时给</em></div>
+    <div class="tr-goal">
+      <p><b>先拿这一条：</b>${esc(techs[0] ? techs[0].name : '节尾钩子')} —— 它不依赖这个题材，换赛道照样成立。</p>
+      <p><b>别拿这一条：</b>${esc(r.weak[0] ? r.weak[0].k : '最后一节的收束方式')} —— ${esc(r.weak[0] ? r.weak[0].d : '这是这篇独有的处理方式，换题材就散')}。</p>
+      <p><b>骨架怎么套：</b>把篇幅公式里的功能名当成格子，${esc(r.formula.slice(0, 3).join(' → '))} 这一串顺序固定，格子里的事件全换成你题材里的。比例不动，内容全动。</p>
+    </div>` : '';
+
+  box.innerHTML = `
+    <div class="tr-badges">
+      <span class="tr-badge">${esc(pf.name)}</span>
+      <span class="tr-badge">${r.depth === 'fast' ? '速拆' : r.depth === 'deep' ? '精拆' : '标准'}</span>
+      <span class="tr-badge">${r.nParas} 段 · ${r.nSecs} 节 · ${r.chars.toLocaleString()} 字</span>
+    </div>
+
+    <div class="tr-verdict-card lv-${W.lv}">
+      <div class="tr-vc-l">${esc(W.t)}</div>
+      <div class="tr-vc-t">${esc(W.d)}</div>
+    </div>
+
+    <div class="tr-step-h"><span>第 0 步</span>值不值得拆<em>三个判断，各一句</em></div>
+    <div class="tr-zero">
+      <div class="tr-zero-i"><span>核心机关</span><p>${esc(r.machine)}</p></div>
+      <div class="tr-zero-i"><span>最强的一招</span><p>${r.bestMove ? `第 ${r.bestMove.sec} 节 —— ${esc(r.bestMove.name)}。${esc(r.bestMove.why)}` : '没有特别突出的一节'}</p></div>
+      <div class="tr-zero-i warn"><span>最弱的一环</span><p>${r.weak.length ? r.weak.slice(0, 2).map(x => `<b>${esc(x.k)}</b>：${esc(x.d)}`).join('<br>') : '结构上没有明显短板'}</p></div>
+    </div>
+
+    <div class="tr-step-h"><span>第一步</span>骨架表<em>每节只回答一个问题：它承担什么功能</em></div>
+    <div class="tr-table-wrap">
+      <table class="tr-table">
+        <thead><tr><th>节</th><th>功能定位</th><th>这一节干了什么</th><th>信息增量</th><th>情绪落点</th><th>结尾钩子</th></tr></thead>
+        <tbody>${skRows}</tbody>
+      </table>
+    </div>
+    <div class="tr-note">功能定位只用动词短语。写不出动词，就说明这一节是废话节 —— 这是判断「能不能删」最快的办法。</div>
+
+    <div class="tr-step-h"><span>篇幅公式</span>比段落更可迁移的是比例<em>换题材时不动比例</em></div>
+    <div class="tr-shape">
+      <div class="tr-shape-bar">${barSegs}</div>
+      <div class="tr-shape-line">${esc(formulaLine)}</div>
+      <div class="tr-shape-hint">${r.dupSec.length ? `<b class="tr-warn">第 ${r.dupSec.map(d => `${d.a}/${d.b}`).join('、')} 节功能撞车</b> —— 这两节在做同一件事，可以合并，省下的字数给${S.find(s => s.funcKey === 'burst') ? '引爆' : '对撞'}那一节。` : `没有功能撞车的节，${r.nSecs} 节各司其职。`}</div>
+    </div>
+
+    ${r.depth === 'fast' ? '' : `
+    <div class="tr-step-h"><span>第二步</span>人物动机图<em>看谁在演 —— 底层动机要你自己填</em></div>
+    <div class="tr-table-wrap">
+      <table class="tr-table">
+        <thead><tr><th>人物</th><th>角色功能</th><th>表层行为</th><th>底层动机（点开填）</th><th>表里分离揭示点</th></tr></thead>
+        <tbody>${pplRows}</tbody>
+      </table>
+    </div>
+    <div class="tr-note">「底层动机」这一列字面算不出来，留给你填 —— 填的过程本身就是理解这篇的关键。${r.people.redundant.length ? `<br><b class="tr-warn">注意：</b>「${esc(r.people.redundant.join('」「'))}」身上同时出现了「给」和「抢」两种相反行为，这是<b>可以拆成两个角色</b>的信号。` : ''}</div>
+
+    <div class="tr-step-h"><span>第三步</span>伏笔与回收<em>六种技法，只认结构不认剧情</em></div>
+    <div class="tr-table-wrap">
+      <table class="tr-table">
+        <thead><tr><th>伏笔</th><th>埋设</th><th>回收</th><th>埋设时读者会以为是</th><th>实际用途</th><th>技法</th></tr></thead>
+        <tbody>${fsRows}</tbody>
+      </table>
+    </div>
+
+    <div class="tr-step-h"><span>第四步</span>技法库<em>只给公式，不给「照这句写」</em></div>
+    <div class="tr-tech-list">${techHtml || '<div class="tr-none" style="padding:16px">这篇没有可抽象成公式的技法 —— 它的优点是桥段本身，不是结构。这种情况别抄。</div>'}</div>
+
+    <div class="tr-step-h"><span>第五步</span>文风指纹<em>写作者最该拿走的部分</em></div>
+    <div class="tr-style">
+      <div class="tr-style-i"><span>句长</span><b>${st.avg} 字/句</b><em>${esc(st.pace)}</em></div>
+      <div class="tr-style-i"><span>短句占比</span><b>${Math.round(st.shortRatio * 100)}%</b><em>≤12 字的句子</em></div>
+      <div class="tr-style-i"><span>对话占比</span><b>${Math.round(st.dlgRatio * 100)}%</b><em>${esc(st.dlgMode)}</em></div>
+      <div class="tr-style-i"><span>视角</span><b>${esc(st.pov)}</b><em>${st.breach.length ? `破例 ${st.breach.length} 处` : '纪律干净'}</em></div>
+    </div>
+    <div class="tr-words">
+      <div class="tr-words-l">高频词</div>
+      ${st.top.map(t => `<span class="tr-word">${esc(t.w)}<i>${t.n}</i></span>`).join('')}
+      <div class="tr-words-h">这三个词反复出现，它们决定这篇的底色 —— 换题材时替换它们，不要替换比例。</div>
+    </div>
+    <div class="tr-sense">
+      <div class="tr-sense-l">感官偏好 · ${esc(st.senseTop)}</div>
+      ${st.senses.map(s => `<div class="tr-sense-row"><span>${esc(s.name)}</span><div class="tr-sense-bar"><i style="width:${Math.round(s.n / senseMax * 100)}%"></i></div><b>${s.n}</b></div>`).join('')}
+      ${st.senses[0] && st.senses[0].ex ? `<div class="tr-sense-ex">例：${esc(st.senses[0].ex)}</div>` : ''}
+    </div>
+    ${drill}
+    ${goalHtml}
+    `}
+
+    <div class="tr-final">
+      <div class="tr-final-l">这篇最值得你偷的一样东西</div>
+      <div class="tr-final-t">${esc(
+        techs[0] ? techs[0].name + ' —— ' + techs[0].formula.split('→')[0].trim()
+          : r.bestMove ? r.bestMove.name
+            : '没有 —— 这篇结构是平的，学不到可迁移的东西'
+      )}</div>
+    </div>
+
+    <div class="tr-foot">拆骨架，不抄桥段 · 结构可学，原句、人设、桥段不能搬 · 全部在本地算，不联网、不上传</div>`;
+}
+
+/* ================= 8. 数据设置 ================= */
 VIEWS.settings = () => {
   const frag = el('div', 'page');
   const d = DB.d;

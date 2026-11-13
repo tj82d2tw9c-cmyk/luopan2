@@ -681,7 +681,10 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
 .nc-tag { font-size: 11.5px; color: var(--label-2); margin-top: 8px; }
 
 /* 拆文 */
-.analyze-grid { display: grid; grid-template-columns: 1fr 1.08fr; gap: 26px; align-items: start; }
+.analyze-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.08fr); gap: 26px; align-items: start; }
+/* 单列断点下必须用 minmax(0,1fr)：写成 1fr 时最小值仍是 auto，
+   而 auto 会被内部表格的 min-width:560px 顶住，整页跟着横向溢出 */
+.analyze-grid > * { min-width: 0; }
 .ta {
   width: 100%; border: 0; outline: none; font-family: "Source Han Serif SC", "Noto Serif SC", Georgia, serif;
   font-size: 14px; line-height: 1.85; color: var(--label);
@@ -931,6 +934,30 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
   align-self: center; flex: 0 0 auto;
 }
 .sr-step-h > em { font-size: 11px; font-weight: 400; color: var(--label-3); font-style: normal; margin-left: auto; }
+
+/* 拆文台用的步骤标题：和审稿官的 sr-step-h 同一套视觉，
+   但 em 允许换行 —— 拆文的副标题更长（「每节只回答一个问题：它承担什么功能」），
+   用 margin-left:auto 推到右端在窄屏会和大标题挤成一坨 */
+.tr-step-h {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px;
+  margin: 26px 0 12px; padding-bottom: 8px;
+  border-bottom: .5px solid var(--sep);
+  font-size: 15px; font-weight: 600; letter-spacing: -.1px;
+}
+.tr-step-h:first-of-type { margin-top: 0; }
+.tr-step-h > span {
+  font-size: 10px; font-weight: 600; letter-spacing: .8px;
+  background: var(--sakura-deep); color: #fff; border-radius: 5px; padding: 2px 6px;
+  align-self: center; flex: 0 0 auto;
+}
+.tr-step-h > em {
+  font-size: 11px; font-weight: 400; color: var(--label-3);
+  font-style: normal; margin-left: auto; flex: 0 1 auto; text-align: right;
+}
+@media (max-width: 560px) {
+  .tr-step-h { font-size: 14px; }
+  .tr-step-h > em { margin-left: 0; flex-basis: 100%; text-align: left; }
+}
 
 /* 审查条目 */
 .sr-item {
@@ -1192,7 +1219,7 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
   }
   /* 柔光雾是为双列右侧留白设计的，单列下会糊住图标 */
   .appgrid-wrap::before { display: none; }
-  .detail-grid, .studio-grid, .analyze-grid { grid-template-columns: 1fr; }
+  .detail-grid, .studio-grid, .analyze-grid { grid-template-columns: minmax(0,1fr); }
   .gacha-wrap { flex-direction: column; }
   .gacha-stack { width: 100%; max-width: 420px; }
 }
@@ -1361,7 +1388,7 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
   .fchip { font-size: 12px; padding: 5px 9px; }
 
   /* 详情 / 其它网格 */
-  .detail-grid, .studio-grid, .analyze-grid, .stat-grid { grid-template-columns: 1fr; }
+  .detail-grid, .studio-grid, .analyze-grid, .stat-grid { grid-template-columns: minmax(0,1fr); }
   .detail-side { position: static; }
   .gacha-wrap { flex-direction: column; }
   .gacha-stack { max-width: 100%; }
@@ -1424,4 +1451,320 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
   .sr-fix-before, .sr-fix-after { font-size: 11.8px; padding: 8px 10px; }
   .sr-verdict { padding: 15px 16px; border-radius: 13px; }
   .sr-verdict-t { font-size: 14px; line-height: 1.74; }
+}
+
+/* ==========================================================
+   7. 拆文台（tr- 前缀）
+   ========================================================== */
+
+/* 顶部标签 */
+.tr-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.tr-badge {
+  font-size: 11px; padding: 3px 9px; border-radius: 20px;
+  background: var(--fill-1); color: var(--label-2); letter-spacing: .2px;
+}
+
+/* 值不值得拆 */
+.tr-verdict-card {
+  border-radius: 14px; padding: 15px 17px; margin-bottom: 20px;
+  background: var(--card); box-shadow: var(--sh-card);
+  border-left: 3px solid var(--label-4);
+}
+.tr-verdict-card.lv-good { border-left-color: #6B9F73; background: linear-gradient(100deg, rgba(107,159,115,.10), var(--card) 62%); }
+.tr-verdict-card.lv-mid  { border-left-color: #D9A94E; background: linear-gradient(100deg, rgba(217,169,78,.10), var(--card) 62%); }
+.tr-verdict-card.lv-bad  { border-left-color: #CC5449; background: linear-gradient(100deg, rgba(204,84,73,.10), var(--card) 62%); }
+.tr-vc-l { font-size: 15px; font-weight: 650; margin-bottom: 5px; letter-spacing: -.1px; }
+.tr-vc-t { font-size: 12.5px; line-height: 1.7; color: var(--label-2); }
+
+/* 第 0 步三栏 */
+.tr-zero { display: grid; gap: 9px; }
+.tr-zero-i {
+  background: var(--card); border-radius: 12px; padding: 12px 14px;
+  box-shadow: var(--sh-card); border-left: 2.5px solid var(--sakura);
+}
+.tr-zero-i.warn { border-left-color: var(--sys-orange); }
+.tr-zero-i > span {
+  display: block; font-size: 10.5px; letter-spacing: .6px;
+  color: var(--label-3); margin-bottom: 5px;
+}
+.tr-zero-i p { font-size: 13px; line-height: 1.72; margin: 0; }
+.tr-zero-i p b { color: var(--sys-orange); }
+
+/* 表格 */
+/* 注意 min-width:0 —— grid/flex 子项默认 min-width:auto，会被内部表格的
+   min-width:620px 撑开，overflow-x:auto 就永远不生效，整页跟着横向溢出。
+   加上 min-width:0 之后，滚动条才落在表格自己身上。 */
+.tr-table-wrap {
+  overflow-x: auto; border-radius: 13px; background: var(--card);
+  box-shadow: var(--sh-card); -webkit-overflow-scrolling: touch;
+  min-width: 0; max-width: 100%;
+}
+.tr-table { width: 100%; border-collapse: collapse; font-size: 12.2px; min-width: 620px; }
+.tr-table th {
+  text-align: left; font-weight: 600; font-size: 11px; letter-spacing: .3px;
+  color: var(--label-2); padding: 10px 11px; white-space: nowrap;
+  border-bottom: .5px solid var(--sep); background: rgba(120,112,96,.04);
+}
+.tr-table td {
+  padding: 10px 11px; vertical-align: top; line-height: 1.62;
+  border-bottom: .5px solid rgba(90,84,72,.07);
+}
+.tr-table tr:last-child td { border-bottom: none; }
+.tr-pt { font-weight: 600; white-space: nowrap; color: var(--label-2); }
+.tr-pt span { display: block; font-size: 10px; font-weight: 400; color: var(--label-3); margin-top: 2px; }
+.tr-desc { color: var(--label-2); font-size: 11.8px; }
+/* 伏笔表的「第 N 节」列：不加 nowrap 会被挤成「第 1 / 节」两行 */
+.tr-at { white-space: nowrap; color: var(--label-2); font-size: 11.6px; }
+.tr-fn { color: var(--label); font-size: 12.8px; white-space: nowrap; }
+.tr-soft {
+  display: inline-block; width: 12px; height: 12px; line-height: 12px;
+  font-size: 9px; text-align: center; font-style: normal; border-radius: 50%;
+  background: var(--fill-2); color: var(--label-3); margin-left: 4px; cursor: help;
+}
+.tr-me, .tr-broken {
+  font-style: normal; font-size: 9.5px; padding: 1px 5px; border-radius: 4px;
+  margin-left: 4px; vertical-align: 1px;
+}
+.tr-me { background: rgba(178,118,126,.14); color: var(--sakura-deep); margin-left: 4px; }
+/* 代词归并注：告诉作者「她」已经算进这个人身上了，不是漏了一个角色 */
+.tr-merged {
+  font-style: normal; font-size: 9.5px; margin-left: 5px; padding: 1px 5px;
+  border-radius: 4px; background: var(--fill-1); color: var(--label-3);
+  white-space: nowrap;
+}
+.tr-broken { background: rgba(204,84,73,.14); color: var(--sys-red); }
+
+/* 信息增量 */
+.tr-inf { font-size: 11.5px; color: var(--label-2); }
+.tr-inf em.tr-inf-t {
+  font-style: normal; font-size: 9.5px; padding: 1px 5px; border-radius: 4px;
+  background: var(--fill-1); color: var(--label-3); margin-right: 4px;
+}
+.tr-none { color: var(--label-3); font-style: normal; font-size: 11.5px; }
+/* 兜底信息（这一节没硬信息，但给了软信息）用弱化样式，别跟凭据/金额混在一行 */
+.tr-inf-weak { color: var(--label-3); font-style: italic; }
+
+/* 情绪落点 */
+.tr-emo {
+  display: inline-block; font-size: 10.5px; padding: 2px 7px; border-radius: 5px;
+  white-space: nowrap;
+}
+.tr-emo-high { background: rgba(204,84,73,.12); color: var(--sys-red); }
+.tr-emo-mid  { background: rgba(217,169,78,.14); color: #9C7526; }
+.tr-emo-low  { background: var(--fill-1); color: var(--label-3); }
+
+/* 钩子标签 */
+.tr-hook {
+  display: inline-block; font-size: 10.5px; padding: 2px 7px; border-radius: 5px;
+  white-space: nowrap; font-weight: 500;
+}
+.tr-hook-suspense { background: rgba(62,123,182,.13); color: var(--sys-blue-d); }
+.tr-hook-flip     { background: rgba(155,127,184,.15); color: #79599A; }
+.tr-hook-crisis   { background: rgba(204,84,73,.13); color: var(--sys-red); }
+.tr-hook-identity { background: rgba(94,156,156,.15); color: #3F7676; }
+.tr-hook-slap     { background: rgba(217,142,74,.15); color: #A9672C; }
+.tr-hook-none     { background: rgba(204,84,73,.08); color: #B5716A; border: .5px dashed rgba(204,84,73,.3); }
+/* 留白 / 让步：skill 的六种钩子装不下的两种收节方式，
+   用中性色 + 虚线，和「无钩子」的红色区分开 —— 它们不是问题，是另一种收法 */
+.tr-hook-reserve  { background: rgba(120,120,128,.10); color: var(--label-2); }
+.tr-hook-yield    { background: rgba(120,120,128,.07); color: var(--label-3); }
+
+.tr-note {
+  font-size: 11.5px; line-height: 1.72; color: var(--label-3);
+  margin: 9px 2px 0; padding-left: 9px; border-left: 2px solid var(--sep);
+}
+.tr-warn { color: var(--sys-orange); font-weight: 500; }
+
+/* 篇幅公式 */
+.tr-shape { margin-top: 4px; }
+.tr-shape-bar {
+  display: flex; gap: 3px; height: 26px; margin-bottom: 10px;
+}
+.tr-seg {
+  display: block; height: 100%; border-radius: 5px; min-width: 8px;
+  background: var(--fill-2);
+}
+.tr-seg-0 { background: #C9B4B8; }
+.tr-seg-1 { background: #B8B9CE; }
+.tr-seg-2 { background: #A9BCAF; }
+.tr-seg-3 { background: #D9BE92; }
+.tr-seg-4 { background: #A3BFC9; }
+.tr-seg-5 { background: #CBB9A6; }
+.tr-shape-line {
+  font-size: 11.8px; color: var(--label-2); line-height: 1.9;
+  letter-spacing: .1px; word-break: break-word;
+}
+.tr-shape-hint { font-size: 11.8px; color: var(--label-2); margin-top: 8px; line-height: 1.72; }
+
+/* 人物可填空 */
+.tr-role {
+  display: inline-block; font-size: 10.5px; padding: 2px 7px; border-radius: 5px;
+  background: rgba(178,118,126,.12); color: var(--sakura-deep); white-space: nowrap;
+}
+.tr-fill {
+  min-height: 34px; min-width: 110px; padding: 6px 8px; border-radius: 7px;
+  border: .5px dashed rgba(120,112,96,.3); font-size: 11.8px; line-height: 1.6;
+  color: var(--label); background: rgba(255,255,255,.4); outline: none;
+  transition: border-color .15s, background .15s;
+}
+.tr-fill:focus { border-color: var(--sakura-deep); background: #fff; border-style: solid; }
+.tr-fill:empty::before { content: attr(data-ph); color: var(--label-3); pointer-events: none; }
+
+/* 技法 */
+.tr-tech {
+  display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 5px;
+  background: var(--fill-1); color: var(--label-2); white-space: nowrap;
+}
+.tr-tech-list { display: grid; gap: 9px; }
+.tr-tech-item {
+  background: var(--card); border-radius: 13px; padding: 13px 15px 14px;
+  box-shadow: var(--sh-card); border-left: 2.5px solid var(--sys-indigo);
+}
+.tr-tech-h { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.tr-tech-n {
+  font-size: 10px; font-weight: 700; color: #fff; background: var(--sys-indigo);
+  border-radius: 5px; padding: 2px 5px; letter-spacing: .3px;
+}
+.tr-tech-h b { font-size: 13.5px; font-weight: 650; letter-spacing: -.1px; }
+.tr-track {
+  margin-left: auto; font-size: 10px; color: var(--label-3);
+  background: var(--fill-1); padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+}
+.tr-tech-r, .tr-tech-f { display: flex; gap: 9px; margin-top: 7px; }
+.tr-tech-r > span, .tr-tech-f > span {
+  flex: 0 0 60px; font-size: 10.5px; color: var(--label-3);
+  letter-spacing: .3px; padding-top: 2px;
+}
+.tr-tech-r p, .tr-tech-f p { flex: 1; margin: 0; font-size: 12px; line-height: 1.76; }
+.tr-tech-f p {
+  color: #4A4238; background: rgba(107,111,168,.07);
+  padding: 8px 10px; border-radius: 8px; line-height: 1.8;
+}
+
+/* 文风指纹 */
+.tr-style {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px;
+}
+.tr-style-i {
+  background: var(--card); border-radius: 11px; padding: 11px 12px;
+  box-shadow: var(--sh-card);
+}
+.tr-style-i > span { display: block; font-size: 10px; color: var(--label-3); margin-bottom: 4px; }
+.tr-style-i > b { display: block; font-size: 15px; font-weight: 600; letter-spacing: -.2px; }
+.tr-style-i > em {
+  display: block; font-style: normal; font-size: 10.5px;
+  color: var(--label-3); margin-top: 3px; line-height: 1.45;
+}
+
+.tr-words {
+  background: var(--card); border-radius: 12px; padding: 12px 14px;
+  box-shadow: var(--sh-card); margin-bottom: 9px;
+}
+.tr-words-l { font-size: 10.5px; color: var(--label-3); margin-bottom: 8px; }
+.tr-word {
+  display: inline-flex; align-items: baseline; gap: 4px; font-size: 13px;
+  font-weight: 500; padding: 3px 9px; border-radius: 7px;
+  background: rgba(178,118,126,.09); margin: 0 5px 6px 0;
+}
+.tr-word i {
+  font-style: normal; font-size: 10px; color: var(--sakura-deep);
+  font-variant-numeric: tabular-nums;
+}
+.tr-words-h { font-size: 11px; line-height: 1.7; color: var(--label-3); margin-top: 2px; }
+
+.tr-sense {
+  background: var(--card); border-radius: 12px; padding: 12px 14px;
+  box-shadow: var(--sh-card);
+}
+.tr-sense-l { font-size: 11px; color: var(--label-2); margin-bottom: 9px; }
+.tr-sense-row {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 6px;
+}
+.tr-sense-row > span { flex: 0 0 34px; font-size: 11px; color: var(--label-2); }
+.tr-sense-bar {
+  flex: 1; height: 6px; border-radius: 4px; background: var(--fill-1); overflow: hidden;
+}
+.tr-sense-bar > i {
+  display: block; height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, var(--sakura), var(--sakura-deep));
+  transition: width .5s ease;
+}
+.tr-sense-row > b {
+  flex: 0 0 26px; text-align: right; font-size: 11px;
+  font-weight: 500; color: var(--label-3); font-variant-numeric: tabular-nums;
+}
+.tr-sense-ex { font-size: 11px; color: var(--label-3); margin-top: 7px; line-height: 1.6; }
+
+/* 仿写 */
+.tr-drill { display: grid; gap: 9px; }
+.tr-drill-item {
+  background: var(--card); border-radius: 13px; padding: 13px 15px 14px;
+  box-shadow: var(--sh-card); border-left: 2.5px solid var(--sys-teal);
+}
+.tr-drill-lv {
+  display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 5px;
+  background: rgba(94,156,156,.14); color: #3F7676; margin-bottom: 7px;
+}
+.tr-drill-t { font-size: 12.8px; line-height: 1.72; margin: 0 0 8px; font-weight: 500; }
+.tr-drill-l {
+  font-size: 11.8px; line-height: 1.74; color: var(--label-2);
+  margin: 0 0 5px; padding-left: 10px; position: relative;
+}
+.tr-drill-l::before {
+  content: ''; position: absolute; left: 0; top: 8px;
+  width: 3px; height: 3px; border-radius: 50%; background: var(--label-3);
+}
+.tr-drill-l b { color: var(--label); font-weight: 600; }
+
+/* 套用建议 */
+.tr-goal {
+  background: linear-gradient(150deg, #1C1C1E, #2B2A28);
+  border-radius: 14px; padding: 15px 17px; color: #fff;
+}
+.tr-goal p { font-size: 12.2px; line-height: 1.82; margin: 0 0 9px; opacity: .88; }
+.tr-goal p:last-child { margin-bottom: 0; }
+.tr-goal b { color: #9BD3A2; font-weight: 600; }
+
+/* 一句话总评 */
+.tr-final {
+  background: linear-gradient(150deg, #1C1C1E, #2B2A28);
+  border-radius: 15px; padding: 16px 18px; margin-top: 22px;
+}
+.tr-final-l { font-size: 10.5px; letter-spacing: 1.2px; opacity: .5; margin-bottom: 7px; }
+.tr-final-t { font-size: 15px; line-height: 1.7; font-weight: 500; letter-spacing: -.1px; color: #F0E6D8; }
+
+.tr-foot {
+  font-size: 10.5px; line-height: 1.7; color: var(--label-3);
+  margin-top: 14px; text-align: center;
+}
+
+/* 学习者目标输入框 */
+.tr-goal-input {
+  width: 100%; padding: 7px 10px; border-radius: 8px;
+  border: .5px solid var(--sep); background: var(--card);
+  font-size: 12.5px; color: var(--label); outline: none;
+  font-family: inherit;
+}
+.tr-goal-input:focus { border-color: var(--sakura-deep); }
+.tr-goal-input::placeholder { color: var(--label-3); }
+
+/* 拆文台图标（列表里多个 .ico-tear 共存，用渐变区分） */
+.ico-tear { background: linear-gradient(145deg, rgba(107,111,168,.18), rgba(178,118,126,.18)); }
+
+/* 手机断点 */
+@media (max-width: 560px) {
+  .tr-style { grid-template-columns: repeat(2, 1fr); }
+  .tr-zero-i { padding: 11px 12px; }
+  .tr-zero-i p { font-size: 12.5px; }
+  .tr-table { font-size: 11.6px; min-width: 560px; }
+  .tr-table th { font-size: 10.5px; padding: 9px 9px; }
+  .tr-table td { padding: 9px; }
+  .tr-tech-item { padding: 12px 13px; }
+  .tr-tech-h b { font-size: 13px; }
+  .tr-tech-r > span, .tr-tech-f > span { flex: 0 0 48px; font-size: 10px; }
+  .tr-tech-r p, .tr-tech-f p { font-size: 11.8px; }
+  .tr-final-t { font-size: 14px; }
+  .tr-vc-l { font-size: 14px; }
+  .tr-shape-line { font-size: 11.2px; }
+  .tr-seg { min-width: 6px; }
 }
