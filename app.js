@@ -921,20 +921,25 @@ VIEWS.names = () => {
   return frag;
 };
 
-/* ================= 6. 拆文助手 ================= */
+
 const BEAT_TAGS = ['钩子', '身份', '冲突', '反转', '爽点', '情感', '高潮', '留白'];
 
 VIEWS.analyze = () => {
   const frag = el('div', 'page');
   frag.innerHTML = `
     <div class="pg-head"><div><div class="pg-title">拆文助手</div>
-      <div class="pg-sub">粘贴全文，本地计算，不外传</div></div>
+      <div class="pg-sub">钩子 · 节拍 · 情绪曲线 · 人物 · 语言，全部本地计算</div></div>
       <button class="btn btn-primary" id="anRun">${I.scan} 开始拆解</button></div>
     <div class="pg-body">
+      <button class="btn btn-sec" id="anBack" style="display:none;margin-bottom:14px">← 改正文</button>
       <div class="analyze-grid">
-        <div>
-          <div class="section-label" style="margin-top:0">正文</div>
-          <textarea class="ta" id="anText" placeholder="把小说全文粘进来…"></textarea>
+        <div class="an-input" id="anInput">
+          <div class="section-label" style="margin-top:0">正文<span class="an-input-n" id="anCount">0 字</span></div>
+          <textarea class="ta" id="anText" placeholder="把小说全文粘进来…&#10;&#10;建议一次拆一篇完整的，至少 300 字。段落之间空一行，结构分析会更准。"></textarea>
+          <div class="an-input-bar">
+            <button class="btn btn-sec" id="anClear">${I.trash} 清空</button>
+            <button class="btn btn-sec" id="anLoad">${I.empty} 读示例</button>
+          </div>
         </div>
         <div id="anOut">
           <div class="empty">${I.empty}<div class="empty-t">还没有结果</div><div class="empty-d">粘贴正文后点击「开始拆解」</div></div>
@@ -942,95 +947,579 @@ VIEWS.analyze = () => {
       </div>
     </div>`;
   setTimeout(() => {
-    frag.querySelector('#anRun').onclick = () => {
-      const t = frag.querySelector('#anText').value.trim();
+    const ta = frag.querySelector('#anText');
+    const cnt = frag.querySelector('#anCount');
+    const inputWrap = frag.querySelector('#anInput');
+    const out = frag.querySelector('#anOut');
+    const backBtn = frag.querySelector('#anBack');
+    const upd = () => { cnt.textContent = (ta.value.replace(/\s/g, '').length || 0).toLocaleString() + ' 字'; };
+    ta.addEventListener('input', upd);
+    upd();
+
+    const run = () => {
+      const t = ta.value.trim();
       if (t.length < 50) { toast('至少 50 字才有得拆'); return; }
-      renderReport(frag.querySelector('#anOut'), analyzeText(t));
+      const r = analyzeText(t);
+      renderReport(out, r);
+      // 手机上把输入区收起来直接看报告，桌面并排显示不用收
+      if (window.innerWidth <= 560) {
+        frag.querySelector('#anInput').classList.add('min');
+        backBtn.style.display = '';
+        // 滚动容器在页面外，得从 document 拿
+        const wb = $('#winBody');
+        if (wb) wb.scrollTop = 0;
+      }
+    };
+    backBtn.onclick = () => {
+      inputWrap.classList.remove('min');
+      backBtn.style.display = 'none';
+      ta.focus();
+    };
+
+    frag.querySelector('#anRun').onclick = run;
+    frag.querySelector('#anClear').onclick = () => {
+      ta.value = ''; upd();
+      inputWrap.classList.remove('min');
+      backBtn.style.display = 'none';
+      out.innerHTML =
+        '<div class="empty">' + I.empty + '<div class="empty-t">还没有结果</div><div class="empty-d">粘贴正文后点击「开始拆解」</div></div>';
+    };
+    frag.querySelector('#anLoad').onclick = () => {
+      ta.value = SAMPLE_TEXT; upd();
+      toast('已载入示例，点「开始拆解」看看');
     };
   }, 20);
   return frag;
 };
 
+/** 示例文本（原创，只用于演示拆解效果） */
+const SAMPLE_TEXT = `我是在婚礼前三个小时才知道，新郎那边还开着一桌。
+
+酒店三楼，我穿着婚纱站在走廊尽头，听见婆婆的声音从包间里漏出来——"她那边的亲戚先别安排，等客人走了再说。"
+
+我手里的捧花掉在地上，玫瑰砸在地毯上，一点声音都没有。
+
+伴娘小周扯了扯我的袖子，说你别冲动。我说我不冲动，我就是想听清楚。
+
+我推开门。满桌的人在看我，筷子悬在半空，酒还没倒。婆婆脸上那点笑僵住了，随即又活过来，说你怎么来了，快回去补妆。
+
+我说阿姨，那一桌是谁。
+
+她说不就是老家来的几个亲戚嘛，坐不下。
+
+我说坐不下，所以让我爸妈先别进来。
+
+包间里的空气好像被抽干了。新郎——他叫陈默——从里间出来，手还插在西装口袋里，看见我，先愣了一下，然后说你别听我妈瞎讲。
+
+我笑了一下。这个笑不是我准备的，它自己跑出来的。
+
+我说陈默，我们谈了四年。四年里我见过你妈三次，每一次她都夸我懂事。
+
+他说你这是干什么，今天这么多人在。
+
+我说我干什么？我连我爸妈坐哪都不知道，你问我干什么。
+
+婆婆这时候站起来了，声音也大了，说这是我家的事，你一个还没进门的女孩子管这么宽。
+
+我说阿姨，您这句话说得对。我还没进门。
+
+我把戒指摘下来，放在转盘上。那枚戒指转了两圈，停在一盘没动过的鱼面前。
+
+走廊里很安静。我脱了高跟鞋，光脚往前走。
+
+电梯门开的时候，我听见身后有椅子倒地的声音，还有人在喊我的名字。
+
+我没有回头。`;
+
+/* ================= 6. 拆文助手 =================
+ *
+ * 纯本地规则拆解，不联网。目标不是「算几个数字」，而是回答三个作者真关心的问题：
+ *   ① 这篇的钩子立不立得住？
+ *   ② 节拍是不是按读者预期在推进，哪里可能掉？
+ *   ③ 语言有没有重复、有没有口水。
+ *
+ * 拆解分五块：
+ *   开篇钩子   —— 100 字内有没有冲突/悬念/反常，分别打分
+ *   结构节拍   —— 按功能给段落打标签（不是硬套 8 个动作名）
+ *   情绪曲线   —— 逐段强度折线，找平淡区和塌陷
+ *   人物与场景 —— 出场人物排序、场景切换密度
+ *   语言体检   —— 句长分布、重复用词、口头禅、长句定位
+ */
+
+/* 钩子特征词。分组对应四种钩子类型，命中即加分 */
+const HOOK_SIGNS = {
+  conflict: {
+    name: '冲突',
+    words: ['吵', '骂', '打', '摔', '砸', '抢', '逼', '撕', '扇', '吼', '冷笑', '怒', '翻脸', '滚', '不要脸', '凭什么', '你敢'],
+  },
+  suspense: {
+    name: '悬念',
+    words: ['为什么', '直到', '才明白', '原来', '竟然', '没想到', '后来才', '如果', '秘密', '真相', '不知道', '谁', '怎么会', '可是'],
+  },
+  abnormal: {
+    name: '反常',
+    words: ['死', '婚礼', '葬礼', '离婚', '怀孕', '出轨', '失踪', '报警', '法院', '遗书', '绝症', '手术', '血', '尸体', '尸体', '第三个月', '第七天'],
+  },
+  emotion: {
+    name: '情绪',
+    words: ['哭', '眼泪', '疼', '恨', '怕', '发抖', '心口', '喘不过', '窒息', '笑', '崩溃', '跪', '求'],
+  },
+};
+
+/* 段落功能标签 —— 按内容特征判定，而不是按顺序硬分配 */
+const PARA_KINDS = [
+  { key: 'dialog', name: '对话', cls: 'blue', test: (p, f) => f.dlgRatio > .42 },
+  { key: 'action', name: '动作', cls: 'orange', test: (p, f) => f.verbRate > .085 && f.dlgRatio < .3 },
+  { key: 'inner', name: '心理', cls: 'pink', test: (p, f) => f.thinkCount >= 2 },
+  { key: 'scene', name: '场景', cls: 'green', test: (p, f) => f.sceneCount >= 2 && f.dlgRatio < .25 },
+  { key: 'transition', name: '过渡', cls: 'warn', test: (p, f) => p.length < 42 || f.timeCount >= 1 },
+];
+
+const THINK_RE = /(觉得|以为|想着|心里|明白|意识到|忽然想起|记得|后悔|害怕|害怕|希望|知道|发现自己)/g;
+const VERB_RE = /(走|跑|站|坐|推|拉|抓|握|扔|拿|放|转身|回头|低头|抬头|点头|摇头|伸手|开门|关门|冲|退|扑|撞|踢|踏|靠|躺|蹲|望|盯|看|听|说|问|答)/g;
+const SCENE_RE = /(房间|屋里|窗|门|街|路|楼|车|办公室|厨房|客厅|卧室|电梯|走廊|阳台|医院|学校|雨|雪|风|阳光|灯|夜|天|墙|桌子|沙发|床)/g;
+const TIME_RE = /(第二天|三天后|一周|半个月|一个月|半年|那年|小时候|后来|那天|当晚|半夜|清晨|傍晚|多年|之后|当时|此刻)/g;
+const ENV_RE = /(雨|雪|风|阳光|夕阳|天亮|天黑|夜|灯|光|冷|热|雾|云|树|花|街|巷)/g;
+
+/** 逐句拆，保留标点信息 */
+function splitSents(text) {
+  return text
+    .replace(/\n+/g, '¶')
+    .split(/(?<=[。！？!?…；;]|¶)/)
+    .map(s => s.replace(/¶/g, '').trim())
+    .filter(Boolean);
+}
+
+function splitParas(text) {
+  const raw = text.split(/\n+/).map(l => l.trim()).filter(l => l.length > 0);
+  // 只有一个大段（用户粘的是一整块没换行）时，按句号每 ~3 句切一刀，
+  // 否则所有基于「逐段」的分析都退化成 1 个数据点，曲线和节奏条都是空的。
+  if (raw.length === 1 && CN(raw[0]) > 300) {
+    const ss = splitSents(raw[0]);
+    const out = [];
+    let buf = [];
+    let n = 0;
+    for (const s of ss) {
+      buf.push(s);
+      n += CN(s);
+      if (n >= 90) { out.push(buf.join('')); buf = []; n = 0; }
+    }
+    if (buf.length) out.push(buf.join(''));
+    return out;
+  }
+  return raw;
+}
+
+const CN = t => (t.match(/[\u4e00-\u9fa5]/g) || []).length;
+
+/** 第 N 段开始的累计字数 */
+function cumulative(arr, fn) {
+  let acc = 0;
+  return arr.map(x => (acc += fn(x)));
+}
+
 function analyzeText(text) {
-  const chars = text.replace(/\s/g, '').length;
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const paras = lines.filter(l => l.length > 20);
-  const sents = text.split(/[。！？!?…]/).map(s => s.trim()).filter(s => s.length > 4);
-  const dialogN = (text.match(/[“"「].{1,80}?[”"」]/g) || []).length;
-  const avg = sents.length ? Math.round(sents.reduce((a, s) => a + s.length, 0) / sents.length) : 0;
-  const dRate = paras.length ? Math.round(dialogN / paras.length * 100) : 0;
+  const chars = CN(text);
+  const paras = splitParas(text);
+  const sents = splitSents(text);
 
-  const chunk = Math.max(1, Math.ceil(paras.length / 8));
-  const beats = BEAT_TAGS.map((tag, i) => {
-    const seg = paras.slice(i * chunk, (i + 1) * chunk);
-    return { tag, snippet: seg[0] ? seg[0].slice(0, 40) : '', wc: seg.join('').length };
-  }).filter(b => b.wc > 0);
+  /* ---------- 1. 基础指标 ---------- */
+  const sentLens = sents.map(s => CN(s)).filter(n => n > 0);
+  const avg = sentLens.length ? Math.round(sentLens.reduce((a, b) => a + b, 0) / sentLens.length) : 0;
 
-  // 高频词：按标点分句，2-4 字连续片段，过滤虚词
-  const STOP = /[的了是在我你他她它们这那就也和与都还又很太更最一二三四五六七八九十上下里吗呢吧啊着过不没有说会能要可把被让给对从到]/;
-  const cl = text.replace(/[^\u4e00-\u9fa5]/g, '|').split(/\|+/).filter(s => s.length >= 3);
-  const freq = {};
-  cl.forEach(c => {
-    for (let n = 2; n <= 4; n++)
-      for (let i = 0; i + n <= c.length; i++) {
-        const w = c.slice(i, i + n);
-        if (!STOP.test(w)) freq[w] = (freq[w] || 0) + 1;
-      }
+  const dlgSents = sents.filter(s => /[“”"「」]/.test(s));
+  const dlgChars = dlgSents.reduce((a, s) => a + CN(s), 0);
+  const dRate = chars ? Math.round(dlgChars / chars * 100) : 0;
+
+  // 句长分布
+  const buckets = [
+    { label: '≤10 字', min: 0, max: 10 },
+    { label: '11–20', min: 11, max: 20 },
+    { label: '21–35', min: 21, max: 35 },
+    { label: '36–50', min: 36, max: 50 },
+    { label: '>50 字', min: 51, max: 1e9 },
+  ].map(b => ({
+    ...b,
+    n: sentLens.filter(n => n >= b.min && n <= b.max).length,
+  }));
+  const longSents = sents
+    .map((s, i) => ({ s, n: CN(s), idx: i }))
+    .filter(x => x.n > 50)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 3);
+
+  /* ---------- 2. 开篇钩子 ---------- */
+  const head = text.slice(0, 260);
+  const headChars = CN(head);
+  const hookLines = paras.slice(0, 2).join(' ');
+  const hookHits = Object.entries(HOOK_SIGNS).map(([k, v]) => ({
+    key: k,
+    name: v.name,
+    hits: v.words.filter(w => head.includes(w)),
+  }));
+  const hookScore = (() => {
+    let s = 0;
+    s += Math.min(40, hookHits.reduce((a, h) => a + h.hits.length, 0) * 14);
+    // 开头句长：短句更有力
+    const firstLen = CN(sents[0] || '');
+    if (firstLen && firstLen <= 18) s += 22;
+    else if (firstLen <= 30) s += 12;
+    // 前 100 字内是否出现具体场景或人物动作
+    if (/[我你他她]/.test(head.slice(0, 100))) s += 14;
+    if (/[“「"]/.test(head.slice(0, 120))) s += 12;
+    if (/[,，。]/.test(head.slice(0, 30))) s += 6;
+    return Math.max(0, Math.min(100, s));
+  })();
+
+  /* ---------- 3. 逐段特征 + 节拍 ---------- */
+  const paraInfo = paras.map((p, i) => {
+    const n = CN(p);
+    const dlgN = CN((p.match(/[“「"][^”」"]*[”」"]/g) || []).join(''));
+    const f = {
+      dlgRatio: n ? dlgN / n : 0,
+      verbRate: n ? ((p.match(VERB_RE) || []).length) / n : 0,
+      thinkCount: (p.match(THINK_RE) || []).length,
+      sceneCount: (p.match(SCENE_RE) || []).length,
+      timeCount: (p.match(TIME_RE) || []).length,
+    };
+    const kind = PARA_KINDS.find(k => k.test(p, f)) || { key: 'desc', name: '叙述', cls: '' };
+    return { i, p, n, ...f, kind };
   });
-  const cand = Object.entries(freq).sort((a, b) => b[1] * b[0].length - a[1] * a[0].length);
+
+  const totalChars = paraInfo.reduce((a, x) => a + x.n, 0) || 1;
+  const cum = cumulative(paraInfo, x => x.n);
+  const at = pct => cum.findIndex(c => c >= totalChars * pct) + 1 || paraInfo.length;
+
+  /* ---------- 4. 情绪曲线 ---------- */
+  const EMO_RE = {
+    strong: /(哭|吼|骂|摔|砸|撕|扇|打|血|死|崩|疯|恨|痛|疼|尖叫|发抖|窒息|绝望|崩溃)/g,
+    mid: /(笑|慌|急|怕|怒|气|惊|愣|沉默|红|湿|颤|咬|握紧|喘)/g,
+    low: /(说|问|答|看|走|坐|站|听|想|觉得|知道)/g,
+    neg: /(不|没|无|别|嘛|呢|吧)/g,
+  };
+  const intensity = paraInfo.map(x => {
+    const s = (x.p.match(EMO_RE.strong) || []).length * 3
+      + (x.p.match(EMO_RE.mid) || []).length * 1.6
+      + (x.dlgRatio > .4 ? 2 : 0)
+      + (/[！!]/.test(x.p) ? 1.5 : 0)
+      + (/[？?]/.test(x.p) ? 1 : 0);
+    return Math.min(10, s / Math.max(1, x.n / 60));
+  });
+  // 归一化到 0-100
+  const mx = Math.max(...intensity, 1);
+  const curve = intensity.map(v => Math.round(v / mx * 100));
+
+  // 平淡区：连续 ≥3 段低于 35%
+  const flat = [];
+  for (let i = 0; i < curve.length; i++) {
+    if (curve[i] < 35) {
+      let j = i;
+      while (j < curve.length && curve[j] < 35) j++;
+      if (j - i >= 3) flat.push({ from: i + 1, to: j, wc: paraInfo.slice(i, j).reduce((a, x) => a + x.n, 0) });
+      i = j;
+    }
+  }
+
+  /* ---------- 5. 重复用词 ---------- */
+  /* 中文没有空格，滑窗切出来的 2-4 字片段大多数不是词（「楼我穿」「着婚纱」）。
+     硬用统计切词效果很差，所以换个思路：不追求切得准，而是要求「同一片段在
+     不同句子里反复出现」——真词才可能这样，跨词的碎片不会。
+     ① 片段必须跨越至少 2 个不同句子出现 ≥2 次
+     ② 头尾不能是虚词
+     ③ 整词命中空泛词表 → 丢
+     ④ 长度优先，长的吞掉短的 */
+  const FUNC = /[的了是在我你他她它们这那就也和与都还又很太更最一二三四五六七八九十上下里吗呢吧啊着过不没有说会能要可把被让给对从到个些什怎样因为所以但而却已只再更于其之以所而且并或]/;
+  const BORING = /^(声音|出来|起来|下来|上去|过来|回来|进去|一个|一些|一点|一下|一阵|这样|那样|什么|怎么|这里|那里|时候|现在|已经|只是|还有|就是|不是|可以|觉得|知道|自己|我们|你们|他们|她们|的话|一样|一边|有点|好像|忽然|突然|然后|接着|于是|因为|所以|但是|而且|如果|虽然|不过|其实|真的|非常|一直|刚刚|马上|立刻|开始)$/;
+
+  // 按句子粒度统计：每个片段记录它出现在哪些句子里
+  const sentList = sents.filter(s => CN(s) >= 4);
+  const where = new Map();   // 片段 -> Set(句子索引)
+  const count = new Map();   // 片段 -> 出现次数
+  sentList.forEach((s, si) => {
+    const clean = s.replace(/[^\u4e00-\u9fa5]/g, '|').split(/\|+/).filter(x => x.length >= 2);
+    for (const run of clean) {
+      for (let n = 2; n <= 4; n++) {
+        for (let i = 0; i + n <= run.length; i++) {
+          const w = run.slice(i, i + n);
+          if (FUNC.test(w) || BORING.test(w)) continue;
+          if (FUNC.test(w[0]) || FUNC.test(w[w.length - 1])) continue;
+          count.set(w, (count.get(w) || 0) + 1);
+          if (!where.has(w)) where.set(w, new Set());
+          where.get(w).add(si);
+        }
+      }
+    }
+  });
+
+  const cand = [...count.entries()]
+    // 同样出现 ≥2 次，且分散在 ≥2 个句子里（跨句才可能是词）
+    .filter(([w, c]) => c >= 2 && (where.get(w) || new Set()).size >= 2)
+    .filter(([w]) => w.length >= 2)
+    .sort((a, b) => b[1] * b[0].length - a[1] * a[0].length);
   const kw = [];
   for (const [w, c] of cand) {
-    if (c < 2) continue;
     if (kw.some(k => k.includes(w) || w.includes(k))) continue;
     kw.push(w);
     if (kw.length >= 10) break;
   }
-  return { chars, paras: paras.length, sents: sents.length, avg, dRate, beats, kw, hook: lines[0] ? lines[0].slice(0, 60) : '' };
+
+  /* ---------- 6. 人物 ---------- */
+  /* 不用通用姓名规则（「酒店三楼」会被当成姓「酒」的人），改成三级证据：
+     ① 称谓词：出现 ≥2 次就算
+     ② 被引号/叙述动词修饰过的专名：X说 / X道 / 叫X / X愣 —— 只取动词前 2~3 字
+     ③ 用户名回填：文中出现过「他叫陈默」「她叫小周」这类，直接认定为人物 */
+  const nameHits = new Map();
+  const bump = (w, n) => nameHits.set(w, (nameHits.get(w) || 0) + n);
+
+  const titleList = ['妈妈', '爸爸', '母亲', '父亲', '老公', '老婆', '婆婆', '公公', '小三', '继母', '继父', '亲妈', '后妈', '姐姐', '妹妹', '哥哥', '弟弟', '闺蜜', '老板', '同事', '男友', '女友', '前夫', '前妻', '未婚夫', '未婚妻', '儿子', '女儿', '奶奶', '爷爷', '外婆', '外公', '舅舅', '姑姑', '姨妈', '阿姨', '叔叔', '婶婶', '嫂子', '大伯'];
+  for (const t of titleList) {
+    const n = (text.match(new RegExp(t, 'g')) || []).length;
+    if (n >= 2) bump(t, n);
+  }
+
+  // ② 明确被指认的名字（破折号、引号、逗号都可能是边界）
+  for (const m of text.matchAll(/(?:叫|名叫|叫做|名字是)\s*([\u4e00-\u9fa5]{2,3})/g)) {
+    bump(m[1], Math.max(2, (text.match(new RegExp(m[1], 'g')) || []).length));
+  }
+
+  // ③ 叙述动词前后的专名
+  const NAME_CTX = /([\u4e00-\u9fa5]{2,3})(?=(?:说|道|问|答|笑|哭|喊|吼|愣|点头|摇头|皱眉|看了我一眼|走过来|转身))/g;
+  for (const m of text.matchAll(NAME_CTX)) {
+    const w = m[1];
+    // 去掉动词吃掉的一节：「陈默从里间出来，手还插」不会误伤
+    if (w.length < 2) continue;
+    // 排除以常见非姓氏字开头的词
+    if (/^[的了她他它们这那就也和与都还又很太最一二三四五六七八九十上下里吗呢吧啊着过不没有把被让给对从到个些什怎样因为所以但而却已只再更酒店屋门窗声手眼口心时天日年月]/.test(w)) continue;
+    const n = (text.match(new RegExp(w, 'g')) || []).length;
+    if (n >= 2 && n <= Math.ceil(text.length / 60)) bump(w, n);
+  }
+  // 去掉互相包含的（「小周」和「周」同时存在时留长的）
+  const people = [...nameHits.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .filter(([w], i, arr) => !arr.slice(0, i).some(([k]) => k.includes(w) || w.includes(k)))
+    .slice(0, 8);
+
+  /* ---------- 7. 场景切换 ---------- */
+  const sceneShifts = [];
+  for (let i = 1; i < paraInfo.length; i++) {
+    if (paraInfo[i].timeCount || (paraInfo[i].sceneCount >= 3 && paraInfo[i - 1].sceneCount >= 3)) {
+      if (paraInfo[i].timeCount) sceneShifts.push({ at: i + 1, word: (paraInfo[i].p.match(TIME_RE) || [])[0] });
+    }
+  }
+
+  /* ---------- 8. 段落长度分布 ---------- */
+  const paraLens = paraInfo.map(x => x.n);
+  const avgPara = Math.round(paraLens.reduce((a, b) => a + b, 0) / Math.max(1, paraLens.length));
+  const longParas = paraInfo.filter(x => x.n > avgPara * 2.2 && x.n > 90).slice(0, 3);
+
+  return {
+    raw: text,
+    chars, paras: paraInfo.length, sents: sents.length, avg, dRate,
+    mins: Math.max(1, Math.round(chars / 400)),
+    buckets, longSents,
+    hook: { text: hookLines.slice(0, 90), hits: hookHits, score: hookScore, headChars },
+    paraInfo, cum, totalChars,
+    curve, flat, sceneShifts, at,
+    kw: kw.map(w => ({ w, n: count.get(w) })),
+    people,
+    avgPara, longParas,
+  };
+}
+
+/* ---------- 评分换算 ---------- */
+function grade(score) {
+  if (score >= 76) return { label: '强', cls: 'good' };
+  if (score >= 50) return { label: '中', cls: 'mid' };
+  return { label: '弱', cls: 'bad' };
+}
+
+function curvePath(curve, w, h) {
+  if (curve.length < 2) return '';
+  const step = w / (curve.length - 1);
+  const pts = curve.map((v, i) => [i * step, h - (v / 100) * h]);
+  // 平滑曲线
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    const cx = (x0 + x1) / 2;
+    d += ` C${cx.toFixed(1)},${y0.toFixed(1)} ${cx.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+  }
+  return { d, pts };
 }
 
 function renderReport(box, r) {
-  const mins = Math.max(1, Math.round(r.chars / 400));
+  const g = grade(r.hook.score);
+  const hookRatio = Math.round(r.hook.headChars / Math.max(1, r.chars) * 100);
+
+  /* 句长分布条形 —— 用 CSS 百分比宽度，不用 flex，避免被压缩看不见 */
+  const maxBucket = Math.max(...r.buckets.map(b => b.n), 1);
+  const totalSent = r.buckets.reduce((a, b) => a + b.n, 0) || 1;
+  const bucketHtml = r.buckets.map(b => `
+    <div class="an-bar-row">
+      <div class="an-bar-l">${b.label}</div>
+      <div class="an-bar-track"><div class="an-bar-fill" style="width:${Math.round(b.n / maxBucket * 100)}%"></div></div>
+      <div class="an-bar-n">${b.n}<em>${Math.round(b.n / totalSent * 100)}%</em></div>
+    </div>`).join('');
+
+  /* 段落节奏条（按功能着色的色带）
+     flex-grow 用权重而不是百分比，再多段也能铺满；
+     段数超过 40 就不显示字数和标题了，免得挤成一团 */
+  const dense = r.paraInfo.length > 40;
+  const mapHtml = r.paraInfo.map((x, i) => {
+    const w = Math.max(1, x.n);
+    return `<span class="an-map-cell k-${x.kind.key}" style="flex:${w} 1 0"
+              title="第 ${i + 1} 段 · ${x.kind.name} · ${x.n} 字">${!dense && x.n >= 40 ? x.n : ''}</span>`;
+  }).join('');
+
+  /* 情绪曲线 */
+  const CW = 100, CH = 42;
+  // 只有 1 个点时画不出线，直接给一条平直的占位，别留空白
+  const path = r.curve.length >= 2
+    ? curvePath(r.curve, CW, CH)
+    : { d: `M0,${(CH - CH * (r.curve[0] || 0) / 100).toFixed(1)} L${CW},${(CH - CH * (r.curve[0] || 0) / 100).toFixed(1)}` };
+  const flatZones = r.flat.map(f => {
+    const x1 = (f.from - 1) / Math.max(1, r.curve.length - 1) * CW;
+    const x2 = (f.to - 1) / Math.max(1, r.curve.length - 1) * CW;
+    return `<rect x="${x1.toFixed(1)}" y="0" width="${Math.max(1.5, x2 - x1).toFixed(1)}" height="${CH}" fill="var(--sys-orange)" opacity=".14"/>`;
+  }).join('');
+
+  const kindLegend = PARA_KINDS.map(k => `<span class="an-legend k-${k.key}"><i></i>${k.name}</span>`).join('')
+    + `<span class="an-legend k-desc"><i></i>叙述</span>`;
+
   box.innerHTML = `
-    <div class="hook-card"><div class="hl">开篇钩子</div><div class="hv">“${esc(r.hook)}”</div></div>
-    <div class="stat-grid">
-      <div class="stat-cell"><div class="sc-n">${r.chars.toLocaleString()}</div><div class="sc-l">总字数</div></div>
-      <div class="stat-cell"><div class="sc-n">${mins} 分钟</div><div class="sc-l">阅读时长</div></div>
-      <div class="stat-cell"><div class="sc-n">${r.paras}</div><div class="sc-l">有效段落</div></div>
-      <div class="stat-cell"><div class="sc-n">${r.avg} 字</div><div class="sc-l">平均句长</div></div>
-      <div class="stat-cell"><div class="sc-n">${r.dRate}%</div><div class="sc-l">对话密度</div></div>
-      <div class="stat-cell"><div class="sc-n">${r.sents}</div><div class="sc-l">句子数</div></div>
-    </div>
-    <div class="section-label">高频词</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">
-      ${r.kw.map((k, i) => `<span class="tag ${i < 3 ? 'blue' : ''}">${esc(k)}</span>`).join('') || '<span class="tag">—</span>'}
-    </div>
-    <div class="section-label">结构节拍表</div>
-    <div class="beat-list">
-      ${r.beats.map((b, i) => `<div class="beat-item">
-        <div class="beat-name">${b.tag}</div>
-        <div class="beat-txt">${esc(b.snippet)}…
-          <div class="beat-words">约 ${b.wc} 字 · 第 ${i + 1} 段</div>
+    ${r.chars < 300 ? '<div class="an-warn">正文较短，统计意义有限，建议至少 300 字。</div>' : ''}
+
+    <div class="an-hero">
+      <div class="an-hero-top">
+        <div>
+          <div class="an-hero-l">开篇钩子</div>
+          <div class="an-hero-q">“${esc(r.hook.text)}”</div>
         </div>
-      </div>`).join('')}
+        <div class="an-score ${g.cls}">
+          <b>${r.hook.score}</b><span>${g.label}</span>
+        </div>
+      </div>
+      <div class="an-hero-chips">
+        ${r.hook.hits.map(h => h.hits.length
+          ? `<span class="an-chip on">${h.name} ${h.hits.length}</span>`
+          : `<span class="an-chip">${h.name} 0</span>`).join('')}
+      </div>
+      <div class="an-hero-foot">前 100 字占全文 ${hookRatio}%${r.hook.hits.every(h => !h.hits.length) ? ' · 开篇没有明显冲突/悬念/反常信号' : ''}</div>
     </div>
-    <div class="section-label">节奏诊断</div>
-    <div class="card-block" style="padding:16px;font-size:13px;line-height:1.8;color:var(--label-2)">${diagnose(r)}</div>
-    <div style="text-align:center;font-size:11.5px;color:var(--label-3);padding:8px">本地规则计算，只作参考</div>`;
+
+    <div class="an-tiles">
+      <div class="an-tile"><b>${r.chars.toLocaleString()}</b><span>总字数</span></div>
+      <div class="an-tile"><b>${r.mins} 分</b><span>阅读时长</span></div>
+      <div class="an-tile"><b>${r.paras}</b><span>段落</span></div>
+      <div class="an-tile"><b>${r.avg}</b><span>平均句长</span></div>
+      <div class="an-tile"><b>${r.dRate}%</b><span>对话占比</span></div>
+      <div class="an-tile"><b>${r.avgPara}</b><span>平均段长</span></div>
+    </div>
+
+    <div class="an-sec">
+      <div class="an-sec-h">情绪曲线<span class="an-sec-s">逐段强度，越高峰值越高</span></div>
+      <div class="an-curve">
+        <svg viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none">
+          ${flatZones}
+          <path d="${path.d}" fill="none" stroke="var(--sys-pink)" stroke-width="1.1" stroke-linecap="round"/>
+          <path d="${path.d} L${CW},${CH} L0,${CH} Z" fill="var(--sys-pink)" opacity=".10"/>
+        </svg>
+      </div>
+      <div class="an-curve-x"><span>开头</span><span>中段</span><span>结尾</span></div>
+      ${r.flat.length
+      ? `<div class="an-note">发现 ${r.flat.length} 处平淡区（橙色带）：${r.flat.map(f => `第 ${f.from}–${f.to} 段 · ${f.wc} 字`).join('，')}</div>`
+      : '<div class="an-note ok">没有连续 3 段以上的低强度区，节奏保持得住</div>'}
+    </div>
+
+    <div class="an-sec">
+      <div class="an-sec-h">段落节奏<span class="an-sec-s">按字数成比例，颜色是功能</span></div>
+      <div class="an-map">${mapHtml}</div>
+      <div class="an-legend-row">${kindLegend}</div>
+      <div class="an-note">前 25% 落在第 ${r.at(.25)} 段，中点在第 ${r.at(.5)} 段，3/4 处在第 ${r.at(.75)} 段</div>
+    </div>
+
+    <div class="an-sec">
+      <div class="an-sec-h">句长分布<span class="an-sec-s">短句提速，长句压气氛</span></div>
+      ${bucketHtml}
+      ${r.longSents.length ? `<div class="an-note">最长的 ${r.longSents.length} 句（超 50 字），可考虑拆开：<div class="an-long">${r.longSents.map(x => `<div>· ${esc(x.s.slice(0, 60))}…<i>${x.n} 字</em></div>`).join('')}</div></div>` : ''}
+    </div>
+
+    <div class="an-sec">
+      <div class="an-sec-h">人物<span class="an-sec-s">按出现次数排</span></div>
+      ${r.people.length
+      ? `<div class="an-people">${r.people.map(([n, c], i) => `<span class="an-person${i === 0 ? ' lead' : ''}">${esc(n)}<i>${c}</i></span>`).join('')}</div>`
+      : '<div class="an-note">没识别出反复出现的人物名，可能通篇用「我/你/他」，也可能是称呼多变。</div>'}
+      <div class="an-note">场景/时间切换 ${r.sceneShifts.length} 处${r.sceneShifts.length ? '：' + r.sceneShifts.slice(0, 6).map(s => `第 ${s.at} 段「${esc(s.word)}」`).join('，') : ''}</div>
+    </div>
+
+    <div class="an-sec">
+      <div class="an-sec-h">重复用词<span class="an-sec-s">点一下看上下文</span></div>
+      <div class="an-kw">${r.kw.length ? r.kw.map(k => `<button class="an-kw-item" data-w="${esc(k.w)}">${esc(k.w)}<i>${k.n}</i></button>`).join('') : '<span class="an-note">没有明显重复</span>'}</div>
+      <div class="an-kw-out" id="anKwOut"></div>
+    </div>
+
+    <div class="an-sec">
+      <div class="an-sec-h">诊断</div>
+      <div class="an-diag">${diagnose(r)}</div>
+    </div>
+
+    <div class="an-foot">全部本地计算 · 规则统计，不判断好坏，只看结构</div>`;
+
+  // 重复词点开看上下文
+  const out = box.querySelector('#anKwOut');
+  box.querySelectorAll('.an-kw-item').forEach(b => {
+    b.onclick = () => {
+      const w = b.dataset.w;
+      const ctx = [];
+      const raw = r.raw || '';
+      let idx = -1;
+      while ((idx = raw.indexOf(w, idx + 1)) >= 0 && ctx.length < 4) {
+        const from = Math.max(0, idx - 14), to = idx + w.length + 14;
+        ctx.push({ pre: raw.slice(from, idx), hit: w, post: raw.slice(idx + w.length, to) });
+      }
+      out.innerHTML = ctx.length
+        ? ctx.map(c => `<div class="an-ctx">…${esc(c.pre.replace(/\n/g, ' '))}<em>${esc(c.hit)}</em>${esc(c.post.replace(/\n/g, ' '))}…</div>`).join('')
+        : '';
+    };
+  });
 }
 
 function diagnose(r) {
   const o = [];
-  if (r.avg > 32) o.push('· 句子偏长（平均 ' + r.avg + ' 字），短篇读者耐性低，建议把长句拆成两拍。');
-  else if (r.avg < 14) o.push('· 句子偏短（平均 ' + r.avg + ' 字），节奏快，适合爽点密集但要防碎。');
-  else o.push('· 句子长度适中（平均 ' + r.avg + ' 字），阅读负担正常。');
 
-  if (r.dRate > 45) o.push('· 对话密度偏高（' + r.dRate + '%），注意补足环境和心理描写。');
-  else if (r.dRate < 12) o.push('· 对话偏少（' + r.dRate + '%），人物关系推进偏慢，可加交锋。');
-  else o.push('· 对话密度 ' + r.dRate + '%，叙述与对白配比合理。');
+  // 钩子
+  if (r.hook.score >= 76) o.push(['good', '开篇信号充足，冲突/悬念/反常至少踩中两样，可以对标成稿的钩子写法。']);
+  else if (r.hook.score >= 50) o.push(['mid', '开篇有信号但不集中。短篇前 300 字内就该让人知道「出事了」，可以再压一版开头。']);
+  else o.push(['bad', '开篇偏平，没有冲突、悬念、反常中的任何一项。读者极可能在这里划走，建议直接砍掉前两段从事件写起。']);
 
-  if (r.chars < 3000) o.push('· 全文 ' + r.chars + ' 字，属微型短篇，钩子必须在前 200 字内落地。');
-  else if (r.chars > 12000) o.push('· 全文 ' + r.chars + ' 字，信息量大，注意分段留白。');
-  return o.join('<br>');
+  // 句长
+  if (r.avg > 34) o.push(['warn', `平均句长 ${r.avg} 字，偏长。碎片化阅读下超过 35 字容易断注意力，试试把长句拆成一长一短。`]);
+  else if (r.avg < 13) o.push(['warn', `平均句长 ${r.avg} 字，偏碎。短句能提速，但连续太多会失去承载力，注意穿插长句换气。`]);
+  else o.push(['good', `平均句长 ${r.avg} 字，读起来负担正常。`]);
+
+  // 对话
+  if (r.dRate > 55) o.push(['warn', `对话占比 ${r.dRate}%，偏高。几乎全是说话，场景和心理被挤掉了，读者会不知道人在哪。`]);
+  else if (r.dRate < 15) o.push(['warn', `对话占比只有 ${r.dRate}%，基本是叙述。人物关系推进偏慢，加几句交锋会活起来。`]);
+  else if (r.dRate > 45) o.push(['mid', `对话占比 ${r.dRate}%，略多。检查一下是不是每段都在说话，中间缺了停顿。`]);
+  else o.push(['good', `对话占比 ${r.dRate}%，叙述与对白配比合适。`]);
+
+  // 节奏
+  if (r.flat.length >= 2) o.push(['bad', `有 ${r.flat.length} 处连续多段的低强度区，总长约 ${r.flat.reduce((a, f) => a + f.wc, 0)} 字。这些地方最容易掉读者，考虑压缩或加一个小反转。`]);
+  else if (r.flat.length === 1) o.push(['mid', `第 ${r.flat[0].from}–${r.flat[0].to} 段（${r.flat[0].wc} 字）强度偏低，可以看下这段是不是必要的铺垫。`]);
+  else o.push(['good', '情绪曲线没有明显塌陷，节奏是撑得住的。']);
+
+  // 长段
+  if (r.longParas.length) o.push(['mid', `有 ${r.longParas.length} 段明显偏长（最长 ${Math.max(...r.longParas.map(p => p.n))} 字）。手机上一屏显示不下，建议在段中找一处对话或动作切断。`]);
+
+  // 体量（知乎盐选短篇常见 3000–15000 字）
+  if (r.chars < 800) o.push(['mid', `全文 ${r.chars} 字，比一般短篇短很多。这个体量没有铺垫空间，钩子必须在 100 字内落地。`]);
+  else if (r.chars > 18000) o.push(['mid', `全文 ${r.chars} 字，体量偏大。检查一下中段有没有可以并入副线的部分。`]);
+
+  // 重复
+  const top = r.kw[0];
+  if (top && top.n >= 6) o.push(['warn', `「${top.w}」出现 ${top.n} 次，密度偏高，容易让读者觉得作者词汇不够。可以换几种说法。`]);
+
+  return o.map(([lv, txt]) => `<div class="an-diag-item lv-${lv}"><span></span><div>${esc(txt)}</div></div>`).join('');
 }
 
 /* ================= 7. 数据设置 ================= */
