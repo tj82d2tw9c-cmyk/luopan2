@@ -1079,7 +1079,7 @@ const POS_G = /[\u4e00-\u9fa5]{1,6}?的/g;
 /* 动作 / 心理 / 场景 / 时间 词表 —— 只用来判断「这一段在干嘛」，不参与打分 */
 const THINK_RE = /(觉得|以为|想着|心里|明白|意识到|忽然想起|记得|后悔|害怕|希望|知道|发现|感觉|想要)/g;
 const VERB_RE = /(走|跑|站|坐|推|拉|抓|握|扔|拿|放|转身|回头|低头|抬头|点头|摇头|伸手|开门|关门|冲|退|扑|撞|踢|踏|靠|躺|蹲|望|盯|看|听|说|问|答|递|接|挂|拨|翻|撕|摔|砸|塞|掏|摸|拍|抱)/g;
-const SCENE_RE = /(房间|屋里|窗|门|街|路|楼|车|办公室|厨房|客厅|卧室|电梯|走廊|阳台|医院|学校|银行|法院|物业|雨|雪|风|阳光|灯|夜|墙|桌子|沙发|床)/g;
+const SCENE_RE = /(房间|屋里|窗|门口|门|街|路|楼|车|办公室|厨房|客厅|卧室|电梯|走廊|阳台|医院|学校|银行|法院|物业|抽屉|桌上|椅子|柜台|楼梯|院子|车里|床上|沙发|桌子|床|雨|雪|风|阳光|灯|夜|墙)/g;
 const TIME_RE = /(第二天|三天后|一周|半个月|一个月|半年|那年|小时候|后来|那天|当晚|半夜|清晨|傍晚|多年|之后|当时|此刻|下午|早上)/g;
 
 /* ---------- 6.0 文本切分 ---------- */
@@ -1159,7 +1159,8 @@ const OPEN_KINDS = [
 function srDialogStrong(sent) {
   if (!/^[“"「]/.test(sent)) return false;
   // 对抗、威胁、驱逐、指控类 —— 一开口就在冲突里
-  return /(敢|凭什么|滚|不许|闭嘴|离婚|分手|还回来|知道错|跪下|报警|告你|滚出去|别碰|放手|你疯了|谁让你)/.test(sent);
+  // 另加一类：逼你签字、逼你认、逼你交东西 —— 家里人逼着办事，本身就是反常场面
+  return /(敢|凭什么|滚|不许|闭嘴|离婚|分手|还回来|知道错|跪下|报警|告你|滚出去|别碰|放手|你疯了|谁让你|签啊|签字|快签|不签|认了|认吧|交出来|拿出来|别想|休想|骗我|撒谎|你骗|骗了|说清楚|讲清楚|算什么|凭什么)/.test(sent);
 }
 
 /* 1D 小说腔 */
@@ -1340,13 +1341,27 @@ function analyzeText(text) {
     const time = (p.match(TIME_RE) || []).length;
     const emo = (p.match(/(哭|吼|骂|摔|砸|撕|扇|打|血|死|崩|疯|恨|痛|疼|尖叫|发抖|窒息|绝望|崩溃)/g) || []).length;
     const info = verbs + think * 2 + scene * .5 + emo * 2 + (dlgRatio > .3 ? 3 : 0);
+    // 概述：没有具体场面、没有对白、光在讲「我从小/我一直/后来我」。
+    // 这种段落哪怕塞满「我觉得」「我知道」，也是在讲道理，不是在讲故事。
+    const summarize = /(从小|一直以来|那段时间|后来我|这些年|总之|总的来说|可以说|应该说)/.test(p);
+    const narrateTell = scene === 0 && verbs < 2 && dlgRatio < .1 && n > 40;
     // 空转：没动作、没新信息、没情绪，全在绕
     const empty = info < 3 && n > 45 && think === 0 && emo === 0;
+    // 概述段：也算水，按半份计
+    const vague = !empty && summarize && narrateTell && emo === 0;
     // 累积：有东西在往上走
     const accumulate = emo > 0 || verbs >= 3 || think >= 1;
-    return { i, p, n, dlgRatio, verbs, think, scene, time, emo, info, empty, accumulate };
+    return { i, p, n, dlgRatio, verbs, think, scene, time, emo, info, empty, vague, summarize, accumulate };
   });
   const waterParas = paraInfo.filter(x => x.empty);
+  const vagueParas = paraInfo.filter(x => x.vague);
+  // 场景段：真的有现场。
+  // 网文段落很短（十几二十字），不能按长文标准要求「一段三个动作」。
+  // 判定：有人开口说话（对白）就算现场；或者有地点 + 至少一个动作。
+  const sceneParas = paraInfo.filter(x => x.dlgRatio > .1 || (x.scene > 0 && x.verbs >= 1));
+  const sceneRatio = paraInfo.length ? sceneParas.length / paraInfo.length : 0;
+  // 纯对白段比例：全是「谁说了什么」，没有环境。也算现场，但不算好现场。
+  const talkOnly = sceneParas.filter(x => x.scene === 0).length;
   const waterChars = waterParas.reduce((a, x) => a + x.n, 0);
   const effectiveChars = Math.max(0, chars - waterChars);
 
@@ -1422,10 +1437,15 @@ function analyzeText(text) {
     + (novelDensity <= 1 ? 9 : novelDensity <= 3 ? 6 : novelDensity <= 6 ? 3 : 1) * .12
     + leadEndScore * .10);
   const readScore = clamp10(
-    Math.max(0, 10 - waterParas.length * 1.1) * .40
-    + (holes.length === 0 ? 10 : Math.max(2, 10 - holes.length * 2.4)) * .28
-    + Math.max(0, 10 - dupSec.length * 2.4) * .16
-    + (headed ? 8.5 : 5.5) * .16);
+    Math.max(0, 10 - waterParas.length * 1.1 - vagueParas.length * .45) * .30
+    + (holes.length === 0 ? 10 : Math.max(2, 10 - holes.length * 2.4)) * .22
+    + Math.max(0, 10 - dupSec.length * 2.4) * .12
+    + (headed ? 8.5 : 5.5) * .12
+    // 场景密度：正文里有多少段是真在一个地方、有人在做动作
+    + (sceneRatio >= .6 ? 10 : sceneRatio >= .4 ? 8.5 : sceneRatio >= .25 ? 6.5 : sceneRatio >= .1 ? 4 : 1) * .24);
+  // 全篇没有一处现场 —— 这不是「稍微欠一点」，是文体不对，正文分不许超过 6
+  const noScene = paraInfo.length >= 6 && sceneParas.length === 0;
+  const readFinal = noScene ? Math.min(readScore, 6) : readScore;
   const payScore = clamp10(
     (cutHasHook ? 8.5 : 3) * .38
     + Math.max(0, 10 - delayed.length * 2.6) * .33
@@ -1442,12 +1462,13 @@ function analyzeText(text) {
     leadLast, leadEndT, leadEndScore,
     dupSec,
     paraInfo, waterParas, waterChars, effectiveChars,
+    vagueParas, sceneParas, sceneRatio, talkOnly, noScene,
     curve, holes, overdraft, headPeaks, tailMax,
     people,
     cutIdx, cutHook, cutHasHook,
     promised, payoffs, delayed,
     lastSent, endScore,
-    score: { lead: leadScore, read: readScore, pay: payScore },
+    score: { lead: leadScore, read: readFinal, pay: payScore },
   };
 }
 
@@ -1664,8 +1685,30 @@ function srBodyCheck(r) {
   } else {
     b += `<p class="sr-green">没找到明显空转的段落 —— 每一段都在给新东西。</p>`;
   }
+
+  /* 概述段：没有场面，只有交代 */
+  if (r.vagueParas.length) {
+    b += `<div class="sr-water">${r.vagueParas.slice(0, 4).map(x => `
+      <div class="sr-water-row"><span class="sr-water-n">第 ${x.i + 1} 段</span>
+        <span class="sr-water-t">${esc(x.p.slice(0, 48))}…</span>
+        <em>交代</em></div>`).join('')}</div>`;
+    b += `<p class="sr-red">这 ${r.vagueParas.length} 段是<b>在交代，不是在场</b>：没有地方、没有人在动手、没有一句话被说出来。概述句再多也不产生画面，读者记不住。改法只有一个 —— 挑其中一件事，把它<b>搬到一个具体的地方、让两个人开口</b>。</p>`;
+  }
+
+  /* 场景密度 */
+  const sr = r.sceneRatio;
+  if (r.noScene) {
+    b += `<p class="sr-red">更严重的是：<b>全篇没有一处现场</b>。${r.paraInfo.length} 段里，没有一段发生在一个具体的地方、没有一句话是被人当面说出来的。这不是「写得平淡」，这是<b>文体不对</b> —— 写成了一篇自述，不是一篇小说。挂在哪里、谁先开的口、桌上放着什么，这些一个都没有。</p>`;
+  } else if (sr < .25) {
+    b += `<p class="sr-red">正文里能称得上「场景」的段落只占 <b>${Math.round(sr * 100)}%</b>（${r.sceneParas.length}/${r.paraInfo.length} 段）。交代和叙述挤掉了现场戏 —— 读者被讲了一路，但没有被放进任何一个房间里。</p>`;
+  } else {
+    b += `<p class="sr-dim">正文里能称得上「场景」的段落占 <b>${Math.round(sr * 100)}%</b>（${r.sceneParas.length}/${r.paraInfo.length} 段）。${sr >= .6 ? '这个比例是健康的 —— 大部分篇幅都在现场。' : '基本够用，但交代还可以再压一点。'}${r.talkOnly >= r.sceneParas.length * .6 && r.sceneParas.length >= 3 ? '<b>其中大部分是纯对白</b>：有人在说话，但没写清是在哪儿说的，画面还是虚的 —— 补一两句环境就能立住。' : ''}</p>`;
+  }
+
   if (r.chars < 800) b += `<p class="sr-dim">全文不足 800 字，2-A / 2-B 的结论参考价值有限，重心应该全放在导语上。</p>`;
-  o.push(srItem(2, '2-B', '节奏与水分', r.waterParas.length >= 3 ? 'bad' : r.waterParas.length ? 'warn' : 'good', b));
+  const bLv = (r.waterParas.length >= 3 || r.vagueParas.length >= 4) ? 'bad'
+    : (r.waterParas.length || r.vagueParas.length) ? 'warn' : 'good';
+  o.push(srItem(2, '2-B', '节奏与水分', bLv, b));
 
   /* ── 2-C ── */
   const p = r.people;
@@ -1854,6 +1897,22 @@ function srFixList(r) {
     q('end', '换掉导语的最后一句', '现在是平收，句子把话说完了，没有往上抬。换成一句「直到…」的转折，把读者钉在下一段。', r.leadLast.slice(0, 40), tail);
   }
 
+  /* 全篇没有现场 —— 这条永远排第一，比改句子重要得多 */
+  if (r.noScene) {
+    const v = r.vagueParas[0] || r.paraInfo[Math.min(2, r.paraInfo.length - 1)];
+    q('vague', '挑一段，把它写成一场戏', `全篇 ${r.paraInfo.length} 段，没有一处现场。现在这篇是「讲给读者听的」，要改成「让读者看见的」。只改一段就够，改完差别会很明显。`,
+      v.p.slice(0, 44) + '…',
+      '（改成：地点写死 —— 哪个屋、哪张桌子；让另一个人开口说原话；给一个手上的动作。三样齐了，这一段就活了）');
+  }
+
+  /* 概述段：不是删，是搬进现场 */
+  else if (r.vagueParas.length >= 2 && r.waterParas.length < 2) {
+    const v = r.vagueParas[0];
+    q('vague', '把交代改成一场戏', `第 ${v.i + 1} 段在讲「事情是怎样的」，不是「当时发生了什么」。交代再多也不产生画面。挑一件事，把地点、人、那句话写出来。`,
+      v.p.slice(0, 44) + '…',
+      '（改成：写清楚是在哪个屋、哪张桌子前，谁先开的口，说了哪一句原话。一件具体的事顶十句概述）');
+  }
+
   /* 水分 */
   if (r.waterParas.length >= 2) {
     const w = r.waterParas[0];
@@ -1873,12 +1932,48 @@ function srFixList(r) {
   /* 结尾 */
   if (r.endScore < 6) {
     q('last', '换结尾', '结尾是平的，没有留话题。可讨论度来自「读者想站队」或「想知道后续」。', r.lastSent.slice(0, 40), `后来我再没见过他。只是每年清明，那束花都有人替我送过。`);
+  } else if (r.endScore < 8) {
+    q('last2', '把结尾最后一句收短', `现在是 ${r.lastSent.length} 字，句子把话说满了。留半句，读者才会替你说完。`, r.lastSent.slice(0, 40), `（删掉最后半句解释，只留动作或一句原话，让它停在没说出口的地方）`);
+  }
+
+  /* 三要素缺项 —— 比兜底句更具体，优先补 */
+  r.threeEl.filter(e => !e.ok).forEach(e => {
+    const hint = {
+      id: `（在导语前三句内插一句身份：我今年多少岁、在哪儿、做什么、和对面这个人是什么关系）`,
+      pres: `（把「你被什么压着」写成正在发生的事：不是「家里一直偏心」，而是「今天他把笔推到我面前」）`,
+      goal: `（补一句「我必须做什么」：我要在明天之前把这件事弄清楚 / 我得把那张纸拿回来）`,
+    }[e.key] || `（按「${e.hint}」补一句）`;
+    q('three2', `补上「${e.name}」`, `${e.name}在导语里没有交代。${e.hint} —— 这一项缺了，读者代入就直接断了。`, `（导语里缺少「${e.name}」）`, hint);
+  });
+
+  /* 兜底：候选不够 3 条时，给一条通用的可执行改法，而不是少给 */
+  if (cands.length < 3 && r.people.names.length <= 1) {
+    q('name', '给对面那个人一个名字', '全篇只出现「我」，对面那个人的称呼是空的。读者恨不起来一个人，也记不住一个「他」。', '（通篇只有「我」，无人物名）', `（在导语第一次提到他时就给名字，之后每次冲突都叫这个名字）`);
+  }
+  if (cands.length < 3 && r.talkOnly >= 2) {
+    q('env', '给对白补一句环境', '现在全靠对白在推进，读者听得到声音，看不到画面。在关键那几句对白前后各插一句环境。', `（第 ${(r.sceneParas[0] || r.paraInfo[0]).i + 1} 段附近）`, '（补一句：桌上放着什么、窗外是什么声音、他手上在做什么动作 —— 一句就够）');
+  }
+  if (cands.length < 3) {
+    q('zip', '把重复的信息删一遍', '同一件事在文里说了两遍以上。留最靠前的那个位置，后面再出现就删 —— 读者不需要被提醒。', '（文中重复出现的同一件事实）', '（保留第一次出现，删掉后面的复述）');
+  }
+  if (cands.length < 3 && r.lastSent) {
+    q('end2', '结尾加一句没答完的话', '结尾把事说完了，也把话关上了。留一个没有回答的问题，评论区才有地方站人。', r.lastSent.slice(0, 40), '（在最后加一句反问或一句没头没尾的原话，不要解释）');
   }
 
   /* 排序：先导语（最高优先级），再卡点，再正文 */
-  const ORDER = { open: 0, three: 1, gap: 2, voice: 3, end: 4, cut: 5, over: 6, water: 7, last: 8 };
+  const ORDER = { open: 0, three: 1, three2: 1.2, gap: 2, voice: 3, end: 4, cut: 5, over: 6,
+    water: 7, vague: 7.5, name: 7.6, env: 7.7, zip: 7.8, last: 8, last2: 8.2, end2: 8.3 };
   cands.sort((a, b2) => ORDER[a.k] - ORDER[b2.k]);
-  return cands.slice(0, 3);
+  // 同一个标题只留一条，避免出现两条「补上 我是谁」
+  const seen = new Set();
+  const out = [];
+  for (const c of cands) {
+    if (seen.has(c.t)) continue;
+    seen.add(c.t);
+    out.push(c);
+    if (out.length >= 3) break;
+  }
+  return out;
 }
 
 function srVerdict(r, fix) {
@@ -1897,24 +1992,41 @@ function srVerdict(r, fix) {
   if (r.leadEndT === 0) weak.push('1-E');
   if (!r.cutHasHook) weak.push('3-A');
   if (r.endScore < 8) weak.push('3-C');
-  const leadWeak = weak.filter(x => x.startsWith('1-'));
+  // 正文层面：空转段落多，或者通篇在交代
+  if (r.waterParas.length >= 2 || r.vagueParas.length >= 3) weak.push('2-B');
+  // 场景密度过低 —— 这篇根本没有现场
+  if (r.sceneRatio < .25 && r.paraInfo.length >= 6) weak.push('2-B');
+  const uniq = [...new Set(weak)];
+  const leadWeak = uniq.filter(x => x.startsWith('1-'));
   const firstFix = fix[0];
   const pointer = firstFix ? `先动 4-B 第一条（${firstFix.t}）` : '';
+  const bodyOnly = r.sceneRatio < .2 && r.paraInfo.length >= 6 && leadWeak.length === 0;
 
   if (avg >= 8) return '能发。别自我怀疑了，把 4-B 那三条改完就送去投。';
 
+  // 导语没问题、问题全在「正文没有现场」—— 这种情况最容易被误判成「写得还行」
+  if (bodyOnly) {
+    return `导语是好的，不用动。但这篇的问题是更大的：正文几乎没有现场，${r.paraInfo.length} 段里只有 ${r.sceneParas.length} 段真的把人放进了某个地方。概述撑不起一篇小说，读者读完记不住任何画面。先做 4-B 第一条，把其中一件事写成一场戏，别的先别改。`;
+  }
+
+  // 导语和正文都有问题，且正文是零场景 —— 别让作者以为只改开头就行
+  if (r.noScene) {
+    return `这篇不能投，而且是两处问题：开头没接住，正文也没有一处现场。${r.paraInfo.length} 段全在讲「事情是怎样的」，没有一段是「当时发生了什么」。别只改开头 —— 先挑正文里的一件事，改写成一场戏（4-B 第一条），有了这一场，开头该往哪儿写你自然就知道了。`;
+  }
+
   if (avg >= 6.5) {
-    // 导语分高、失分全在正文/卡点 —— 这稿的导语已经可以了，别让它去改导语
-    if (s.lead >= 8) {
-      return `导语这一关是过的（导语 ${s.lead}/10），不用再动 —— 再改容易改坏。真正掉分的是${weak.length ? ' ' + weak.join('、') + ' ' : '正文和卡点'}。${pointer}，其余别动。`;
+    // 导语过不过关，看的不是总分，而是导语内部有没有扣分项。
+    // 导语 8 分但 1-A 掉分，说明第一句该换 —— 这时候说「导语别动」就是自相矛盾。
+    if (s.lead >= 8 && leadWeak.length === 0) {
+      return `导语这一关是过的（导语 ${s.lead}/10），不用再动 —— 再改容易改坏。真正掉分的是${uniq.length ? ' ' + uniq.join('、') + ' ' : '正文和卡点'}。${pointer}，其余别动。`;
     }
     if (leadWeak.length === 0) {
-      return `导语没有明显硬伤，但整体还不够利。先动 ${weak[0] || '3-A'}。${pointer}，改完再读一遍，剩下的问题你自己会看出来。`;
+      return `导语没有明显硬伤，但整体还不够利。先动 ${uniq[0] || '3-A'}。${pointer}，改完再读一遍，剩下的问题你自己会看出来。`;
     }
     return `底子在，先改 ${leadWeak.slice(0, 2).join(' 和 ')}。${pointer}，改完再读一遍，剩下的问题你自己会看出来。`;
   }
 
-  if (avg >= 5) return '这篇不能直接投。不是写得差，是开头没接住 —— 先把第一句和三百字重写，正文暂时别动。';
+  if (avg >= 5) return `这篇不能直接投。不是写得差，是${leadWeak.length ? '开头没接住 —— 先把第一句和三百字重写' : '整体还没立起来 —— 先从 4-B 第一条开始'}。`;
   if (avg >= 3.5) return '结构有，可信感没有。读者看完三百字会觉得「这是编的」，然后走。问题不在文笔，在有没有具体的东西。';
   return '这篇现在是一个练习稿，不是投稿稿。别改字了，先想清楚：谁在扛什么事，扛不住会怎样。想清楚了重写导语。';
 }
