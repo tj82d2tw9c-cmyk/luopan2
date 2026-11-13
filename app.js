@@ -284,7 +284,7 @@ function paintWidgets() {
 /* ================= 窗口框架 ================= */
 const TITLES = {
   rank: '短篇榜单', cards: '随机抽卡', pool: '导语池', studio: '制图工坊',
-  names: '起名助手', analyze: '拆文助手', settings: '数据设置',
+  names: '起名助手', analyze: '审稿官', settings: '数据设置',
 };
 
 const VIEWS = {};
@@ -927,22 +927,42 @@ const BEAT_TAGS = ['钩子', '身份', '冲突', '反转', '爽点', '情感', '
 VIEWS.analyze = () => {
   const frag = el('div', 'page');
   frag.innerHTML = `
-    <div class="pg-head"><div><div class="pg-title">拆文助手</div>
-      <div class="pg-sub">钩子 · 节拍 · 情绪曲线 · 人物 · 语言，全部本地计算</div></div>
-      <button class="btn btn-primary" id="anRun">${I.scan} 开始拆解</button></div>
+    <div class="pg-head"><div><div class="pg-title">审稿官</div>
+      <div class="pg-sub">按知乎盐选的编辑标准审：先审导语，再审正文，最后给三条改法</div></div>
+      <button class="btn btn-primary" id="anRun">${I.scan} 开始审稿</button></div>
     <div class="pg-body">
       <button class="btn btn-sec" id="anBack" style="display:none;margin-bottom:14px">← 改正文</button>
       <div class="analyze-grid">
         <div class="an-input" id="anInput">
-          <div class="section-label" style="margin-top:0">正文<span class="an-input-n" id="anCount">0 字</span></div>
-          <textarea class="ta" id="anText" placeholder="把小说全文粘进来…&#10;&#10;建议一次拆一篇完整的，至少 300 字。段落之间空一行，结构分析会更准。"></textarea>
+          <div class="section-label" style="margin-top:0">稿件<span class="an-input-n" id="anCount">0 字</span></div>
+          <textarea class="ta" id="anText" placeholder="把小说全文粘进来…&#10;&#10;至少 300 字。前 300 字会被当成导语单独审。&#10;段落之间空一行，结构判断会更准。"></textarea>
+          <div class="an-opts">
+            <label><span>审核模式</span>
+              <select class="sel" id="anMode">
+                <option value="auto">自动判断</option>
+                <option value="lead">只审导语</option>
+                <option value="body">只审正文</option>
+                <option value="all">全篇都审</option>
+              </select>
+            </label>
+            <label><span>题材</span>
+              <select class="sel" id="anGenre">
+                <option value="none">不确定</option>
+                <option value="suspense">悬疑民俗志怪</option>
+                <option value="romance">婚恋追妻火葬场</option>
+                <option value="revenge">复仇爽文</option>
+                <option value="family">现实家庭</option>
+                <option value="xianxia">古言仙侠</option>
+              </select>
+            </label>
+          </div>
           <div class="an-input-bar">
             <button class="btn btn-sec" id="anClear">${I.trash} 清空</button>
             <button class="btn btn-sec" id="anLoad">${I.empty} 读示例</button>
           </div>
         </div>
         <div id="anOut">
-          <div class="empty">${I.empty}<div class="empty-t">还没有结果</div><div class="empty-d">粘贴正文后点击「开始拆解」</div></div>
+          <div class="empty">${I.empty}<div class="empty-t">还没有结果</div><div class="empty-d">粘贴稿件后点击「开始审稿」</div></div>
         </div>
       </div>
     </div>`;
@@ -952,18 +972,22 @@ VIEWS.analyze = () => {
     const inputWrap = frag.querySelector('#anInput');
     const out = frag.querySelector('#anOut');
     const backBtn = frag.querySelector('#anBack');
-    const upd = () => { cnt.textContent = (ta.value.replace(/\s/g, '').length || 0).toLocaleString() + ' 字'; };
+    const modeSel = frag.querySelector('#anMode');
+    const genreSel = frag.querySelector('#anGenre');
+    const upd = () => { cnt.textContent = (CN(ta.value) || 0).toLocaleString() + ' 字'; };
     ta.addEventListener('input', upd);
     upd();
 
     const run = () => {
       const t = ta.value.trim();
-      if (t.length < 50) { toast('至少 50 字才有得拆'); return; }
+      if (CN(t) < 50) { toast('至少 50 字才有得审'); return; }
       const r = analyzeText(t);
-      renderReport(out, r);
+      r.mode = modeSel.value;
+      r.genre = genreSel.value;
+      renderReview(out, r);
       // 手机上把输入区收起来直接看报告，桌面并排显示不用收
       if (window.innerWidth <= 560) {
-        frag.querySelector('#anInput').classList.add('min');
+        inputWrap.classList.add('min');
         backBtn.style.display = '';
         // 滚动容器在页面外，得从 document 拿
         const wb = $('#winBody');
@@ -982,11 +1006,11 @@ VIEWS.analyze = () => {
       inputWrap.classList.remove('min');
       backBtn.style.display = 'none';
       out.innerHTML =
-        '<div class="empty">' + I.empty + '<div class="empty-t">还没有结果</div><div class="empty-d">粘贴正文后点击「开始拆解」</div></div>';
+        '<div class="empty">' + I.empty + '<div class="empty-t">还没有结果</div><div class="empty-d">粘贴稿件后点击「开始审稿」</div></div>';
     };
     frag.querySelector('#anLoad').onclick = () => {
       ta.value = SAMPLE_TEXT; upd();
-      toast('已载入示例，点「开始拆解」看看');
+      toast('已载入示例，点「开始审稿」看看');
     };
   }, 20);
   return frag;
@@ -1031,58 +1055,35 @@ const SAMPLE_TEXT = `我是在婚礼前三个小时才知道，新郎那边还�
 
 我没有回头。`;
 
-/* ================= 6. 拆文助手 =================
+/* ================= 6. 审稿官 =================
  *
- * 纯本地规则拆解，不联网。目标不是「算几个数字」，而是回答三个作者真关心的问题：
- *   ① 这篇的钩子立不立得住？
- *   ② 节拍是不是按读者预期在推进，哪里可能掉？
- *   ③ 语言有没有重复、有没有口水。
+ * 按知乎盐选资深编辑的审稿顺序做，不是统计面板。
+ * 审稿是有先后顺序的：导语不行，后面写得再好也没人看见，所以先审导语再审正文。
  *
- * 拆解分五块：
- *   开篇钩子   —— 100 字内有没有冲突/悬念/反常，分别打分
- *   结构节拍   —— 按功能给段落打标签（不是硬套 8 个动作名）
- *   情绪曲线   —— 逐段强度折线，找平淡区和塌陷
- *   人物与场景 —— 出场人物排序、场景切换密度
- *   语言体检   —— 句长分布、重复用词、口头禅、长句定位
+ *   一、导语审查（前 300 字，最高优先级）
+ *       1A 第一句测试 / 1B 三百字身份报告 / 1C 信息差检查 / 1D 可信感检查 / 1E 导语结尾
+ *   二、正文审查
+ *       2A 章节功能 / 2B 节奏与水分 / 2C 人物可信度 / 2D 情绪曲线
+ *   三、三个硬指标
+ *       3A 付费卡点前有没有钩子 / 3B 标题与导语的一致性 / 3C 结尾可讨论度
+ *   四、总评
+ *       4A 三维评分 / 4B 优先修改清单（只列 3 条，每条给可直接替换的句子）/ 4C 一句话总评
+ *
+ * 每条判断都要能指回原文的具体字句。统计数据只是辅助，
+ * 不能代替「这句话删了会不会更好」这种判断。
  */
 
-/* 钩子特征词。分组对应四种钩子类型，命中即加分 */
-const HOOK_SIGNS = {
-  conflict: {
-    name: '冲突',
-    words: ['吵', '骂', '打', '摔', '砸', '抢', '逼', '撕', '扇', '吼', '冷笑', '怒', '翻脸', '滚', '不要脸', '凭什么', '你敢'],
-  },
-  suspense: {
-    name: '悬念',
-    words: ['为什么', '直到', '才明白', '原来', '竟然', '没想到', '后来才', '如果', '秘密', '真相', '不知道', '谁', '怎么会', '可是'],
-  },
-  abnormal: {
-    name: '反常',
-    words: ['死', '婚礼', '葬礼', '离婚', '怀孕', '出轨', '失踪', '报警', '法院', '遗书', '绝症', '手术', '血', '尸体', '尸体', '第三个月', '第七天'],
-  },
-  emotion: {
-    name: '情绪',
-    words: ['哭', '眼泪', '疼', '恨', '怕', '发抖', '心口', '喘不过', '窒息', '笑', '崩溃', '跪', '求'],
-  },
-};
+const CN = t => (t.match(/[\u4e00-\u9fa5]/g) || []).length;
+const POS_G = /[\u4e00-\u9fa5]{1,6}?的/g;
 
-/* 段落功能标签 —— 按内容特征判定，而不是按顺序硬分配 */
-const PARA_KINDS = [
-  { key: 'dialog', name: '对话', cls: 'blue', test: (p, f) => f.dlgRatio > .42 },
-  { key: 'action', name: '动作', cls: 'orange', test: (p, f) => f.verbRate > .085 && f.dlgRatio < .3 },
-  { key: 'inner', name: '心理', cls: 'pink', test: (p, f) => f.thinkCount >= 2 },
-  { key: 'scene', name: '场景', cls: 'green', test: (p, f) => f.sceneCount >= 2 && f.dlgRatio < .25 },
-  { key: 'transition', name: '过渡', cls: 'warn', test: (p, f) => p.length < 42 || f.timeCount >= 1 },
-];
+/* 动作 / 心理 / 场景 / 时间 词表 —— 只用来判断「这一段在干嘛」，不参与打分 */
+const THINK_RE = /(觉得|以为|想着|心里|明白|意识到|忽然想起|记得|后悔|害怕|希望|知道|发现|感觉|想要)/g;
+const VERB_RE = /(走|跑|站|坐|推|拉|抓|握|扔|拿|放|转身|回头|低头|抬头|点头|摇头|伸手|开门|关门|冲|退|扑|撞|踢|踏|靠|躺|蹲|望|盯|看|听|说|问|答|递|接|挂|拨|翻|撕|摔|砸|塞|掏|摸|拍|抱)/g;
+const SCENE_RE = /(房间|屋里|窗|门|街|路|楼|车|办公室|厨房|客厅|卧室|电梯|走廊|阳台|医院|学校|银行|法院|物业|雨|雪|风|阳光|灯|夜|墙|桌子|沙发|床)/g;
+const TIME_RE = /(第二天|三天后|一周|半个月|一个月|半年|那年|小时候|后来|那天|当晚|半夜|清晨|傍晚|多年|之后|当时|此刻|下午|早上)/g;
 
-const THINK_RE = /(觉得|以为|想着|心里|明白|意识到|忽然想起|记得|后悔|害怕|害怕|希望|知道|发现自己)/g;
-const VERB_RE = /(走|跑|站|坐|推|拉|抓|握|扔|拿|放|转身|回头|低头|抬头|点头|摇头|伸手|开门|关门|冲|退|扑|撞|踢|踏|靠|躺|蹲|望|盯|看|听|说|问|答)/g;
-const SCENE_RE = /(房间|屋里|窗|门|街|路|楼|车|办公室|厨房|客厅|卧室|电梯|走廊|阳台|医院|学校|雨|雪|风|阳光|灯|夜|天|墙|桌子|沙发|床)/g;
-const TIME_RE = /(第二天|三天后|一周|半个月|一个月|半年|那年|小时候|后来|那天|当晚|半夜|清晨|傍晚|多年|之后|当时|此刻)/g;
-const ENV_RE = /(雨|雪|风|阳光|夕阳|天亮|天黑|夜|灯|光|冷|热|雾|云|树|花|街|巷)/g;
-
-/** 逐句拆，保留标点信息 */
-function splitSents(text) {
+/* ---------- 6.0 文本切分 ---------- */
+function srSplitSents(text) {
   return text
     .replace(/\n+/g, '¶')
     .split(/(?<=[。！？!?…；;]|¶)/)
@@ -1090,18 +1091,16 @@ function splitSents(text) {
     .filter(Boolean);
 }
 
-function splitParas(text) {
-  const raw = text.split(/\n+/).map(l => l.trim()).filter(l => l.length > 0);
-  // 只有一个大段（用户粘的是一整块没换行）时，按句号每 ~3 句切一刀，
-  // 否则所有基于「逐段」的分析都退化成 1 个数据点，曲线和节奏条都是空的。
+function srSplitParas(text) {
+  const raw = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  // 用户粘一整块不换行的文本时，逐段分析会退化成 1 个数据点，曲线和色带全空。
+  // 超过 300 字就按句号每 ~90 字切一刀。
   if (raw.length === 1 && CN(raw[0]) > 300) {
-    const ss = splitSents(raw[0]);
+    const ss = srSplitSents(raw[0]);
     const out = [];
-    let buf = [];
-    let n = 0;
+    let buf = [], n = 0;
     for (const s of ss) {
-      buf.push(s);
-      n += CN(s);
+      buf.push(s); n += CN(s);
       if (n >= 90) { out.push(buf.join('')); buf = []; n = 0; }
     }
     if (buf.length) out.push(buf.join(''));
@@ -1110,416 +1109,870 @@ function splitParas(text) {
   return raw;
 }
 
-const CN = t => (t.match(/[\u4e00-\u9fa5]/g) || []).length;
-
-/** 第 N 段开始的累计字数 */
-function cumulative(arr, fn) {
-  let acc = 0;
-  return arr.map(x => (acc += fn(x)));
+/* 按「第X节 / 一、 / 1. / 小标题」切章节；切不开按 ~800 字粗分（仅用于定位） */
+function srSplitSections(text) {
+  const re = /^[\s　]*(第[一二三四五六七八九十百\d]+[节章]|[一二三四五六七八九十]+[、.．]|\d+[、.．]|#{1,3}\s+|【[^】]{2,12}】)/gm;
+  const heads = [...text.matchAll(re)];
+  if (heads.length >= 2) {
+    const out = [];
+    for (let i = 0; i < heads.length; i++) {
+      const from = heads[i].index;
+      const to = i + 1 < heads.length ? heads[i + 1].index : text.length;
+      const body = text.slice(from, to).trim();
+      if (CN(body) >= 30) out.push({ title: (heads[i][1] || '').replace(/^#+\s*/, '').trim(), body });
+    }
+    if (out.length >= 2) return { sections: out, headed: true };
+  }
+  const paras = srSplitParas(text);
+  const out = [];
+  let buf = [], n = 0, idx = 1;
+  for (const p of paras) {
+    buf.push(p); n += CN(p);
+    if (n >= 800) { out.push({ title: '第 ' + idx + ' 块', body: buf.join('\n') }); buf = []; n = 0; idx++; }
+  }
+  if (buf.length) out.push({ title: '第 ' + idx + ' 块', body: buf.join('\n') });
+  return { sections: out, headed: false };
 }
+
+/* ---------- 6.1 词表 ---------- */
+
+/* 1A 六种开场，按抓力排序（skill 原文顺序）
+   两个注意点：
+   ① test 的顺序即优先级，数字要真的像数字，不能命中「一个」「两个」这种量词，
+      否则「那是一个阴天」会被误判成具体数字开场。
+   ② 对话开场单列为 5 分，但 skill 写了「除非对话本身反常」——
+      所以对话里如果带对抗性/威胁性的词，要抬到和反常动作同级。 */
+const OPEN_KINDS = [
+  { key: 'result', name: '结果先行', score: 9, desc: '先给结局，把过程藏起来', test: t => /(才知道|后来才|等到|最后|结果|从那天起|那天早上|我死了|我已经|直到)/.test(t) },
+  { key: 'abnormal', name: '反常动作', score: 9, desc: '做了一件不合理的事', test: t => /(脱|扔|撕|砸|跪|报警|举报|拉黑|删了|摔|光脚|没回头|反手|掉头|退了)/.test(t) },
+  {
+    key: 'number', name: '具体数字', score: 8, desc: '有信源感，最像真事', test: t =>
+      // 阿拉伯数字，或「三百二十万 / 十七笔 / 三十一岁」这类中文数字 + 真量词（不含「个」）
+      /\d/.test(t) || /[一二两三四五六七八九十百千]+\s*(天|年|月|小时|分钟|次|岁|万|千|百|块|元|笔|条|张|页|口人|点)/.test(t)
+  },
+  { key: 'dialog', name: '对话开场', score: 5, desc: '最容易失效，除非对话本身反常', test: t => /^[“"「]/.test(t) },
+  { key: 'question', name: '疑问句开场', score: 4, desc: '容易失效', test: t => /[？?]/.test(t) },
+  { key: 'backdrop', name: '背景铺垫', score: 2, desc: '交代时间地点身份，直接判死', test: () => true },
+];
+
+/* 判「这句对话本身反不反常」。反常的对话开场是好开场，不是弱的。 */
+function srDialogStrong(sent) {
+  if (!/^[“"「]/.test(sent)) return false;
+  // 对抗、威胁、驱逐、指控类 —— 一开口就在冲突里
+  return /(敢|凭什么|滚|不许|闭嘴|离婚|分手|还回来|知道错|跪下|报警|告你|滚出去|别碰|放手|你疯了|谁让你)/.test(sent);
+}
+
+/* 1D 小说腔 */
+const NOVEL_VOICE = [
+  { re: /(不禁|不由得|忍不住|不由自主)/g, name: '副词代替动作', why: '「不禁/忍不住」是把动作替读者总结了一遍，应该直接写做了什么' },
+  { re: /(五味杂陈|百感交集|说不出的|无法形容|难以言喻|说不清)/g, name: '抽象情绪直给', why: '直接说出感受等于没写，读者没有可感的画面' },
+  { re: /(如同|宛如|仿佛|好似)/g, name: '比喻腔', why: '短篇里比喻多是装饰，除非它本身提供信息，否则是刹车' },
+  { re: /(眼眶|鼻子一酸|泪如雨下|泪水|眼泪)/g, name: '套路生理反应', why: '用滥了，读者已经免疫，写了也带不出情绪' },
+  { re: /(深深地|狠狠地|紧紧地|轻轻地|默默地|静静地)/g, name: '叠字副词', why: '删掉不影响意思，只让句子变软' },
+  { re: /(只见|此时此刻|就在这时|此时此地)/g, name: '说书腔', why: '转折全靠这几个词，说明场景本身没跟上' },
+  { re: /(脸色一变|面色|神色|神情)/g, name: '脸色描摹', why: '「脸色一变」不构成信息，读者不知道他看到了什么' },
+  { re: /(心口一紧|心脏|心里一沉|一种.{2,6}的感觉)/g, name: '心理形容词堆叠', why: '把身体反应当情绪用，一次可以，三次就假' },
+];
+
+/* 1D 真事感 */
+const REAL_SIGNALS = [
+  { re: /(\d+\s*(元|块|万|千)|三块五|五毛)/g, name: '具体金额' },
+  { re: /(微信|支付宝|钉钉|美团|淘宝|拼多多|高德|大众点评|抖音)/g, name: '具体 App' },
+  { re: /([一二三四五六七八九十百]{1,3}(区|路|街|巷|弄|号|楼|室|层)|[A-Z]\s*座)/g, name: '地址碎片' },
+  { re: /(护士|医生|保安|前台|客服|人事|财务|中介|快递|外卖|片警|物业)/g, name: '职业动作' },
+  { re: /(周[一二三四五六日天]|早上|下午|晚上|凌晨|点半|\d+\s*分钟)/g, name: '具体时间点' },
+  { re: /(合同|发票|流水|诊断书|短信|录音|截图|判决书|转账|余额|工牌)/g, name: '可触摸的物件' },
+];
+
+/* 1B 三要素探测 */
+const ID_PAT = /(我(今年|是|叫|在|刚|已经|这个)|我这个|作为|当妈的|当爹的|做媳妇|当过|干(了|过).{0,4}年|毕业|读大[一二三四]|在公司|在单位|在银行|在医院|开店|打工|带娃|离婚|结婚|彩礼|月薪|工资)/;
+const PRESSURE_PAT = /(逼|骂|吵|摔|砸|抢|撕|骗|瞒|拦|堵|赶|撵|催|欠|赔|退|告|报警|威胁|不许|凭什么|你敢|最后一次|滚出去|离婚|分手|开除|辞退|不给我|压着|盯着)/;
+const GOAL_PAT = /(我要|我必须|我决定|我不能|我得|非.{0,6}不可|一定要|明天|今天|今晚|月底|下周|截止|之前|马上|三个小时|来不及)/;
+
+/* 2A 章节功能 —— 不硬套动作名，只看这一节主要在干嘛 */
+function srSecMain(body) {
+  const n = CN(body) || 1;
+  const dlg = (body.match(/[“「"][^”」"]{2,}[”」"]/g) || []).length;
+  const dlgChars = CN((body.match(/[“「"][^”」"]{2,}[”」"]/g) || []).join(''));
+  const acts = (body.match(VERB_RE) || []).length;
+  const thinks = (body.match(THINK_RE) || []).length;
+  const emo = (body.match(/(哭|吼|骂|摔|砸|撕|扇|打|血|死|崩|疯|恨|痛|疼|尖叫|发抖|窒息|绝望|崩溃)/g) || []).length;
+  const sig = {
+    对话: dlgChars / n * 100 * 1.6,
+    动作: acts / n * 100 * 2.4,
+    心理: thinks / n * 100 * 4.2,
+    冲突: emo / n * 100 * 5,
+  };
+  const arr = Object.entries(sig).sort((a, b) => b[1] - a[1]);
+  const total = arr.reduce((a, x) => a + x[1], 0) || 1;
+  const focus = Math.round(arr[0][1] / total * 100);
+  // 主导度不到 45% 就是杂糅，说明这一节没想清楚要干嘛
+  return { main: focus >= 45 ? arr[0][0] : '杂糅', focus, sig };
+}
+
+/* ---------- 6.2 主分析 ---------- */
 
 function analyzeText(text) {
   const chars = CN(text);
-  const paras = splitParas(text);
-  const sents = splitSents(text);
+  const paras = srSplitParas(text);
+  const sents = srSplitSents(text);
+  const { sections, headed } = srSplitSections(text);
 
-  /* ---------- 1. 基础指标 ---------- */
-  const sentLens = sents.map(s => CN(s)).filter(n => n > 0);
-  const avg = sentLens.length ? Math.round(sentLens.reduce((a, b) => a + b, 0) / sentLens.length) : 0;
-
-  const dlgSents = sents.filter(s => /[“”"「」]/.test(s));
-  const dlgChars = dlgSents.reduce((a, s) => a + CN(s), 0);
-  const dRate = chars ? Math.round(dlgChars / chars * 100) : 0;
-
-  // 句长分布
-  const buckets = [
-    { label: '≤10 字', min: 0, max: 10 },
-    { label: '11–20', min: 11, max: 20 },
-    { label: '21–35', min: 21, max: 35 },
-    { label: '36–50', min: 36, max: 50 },
-    { label: '>50 字', min: 51, max: 1e9 },
-  ].map(b => ({
-    ...b,
-    n: sentLens.filter(n => n >= b.min && n <= b.max).length,
-  }));
-  const longSents = sents
-    .map((s, i) => ({ s, n: CN(s), idx: i }))
-    .filter(x => x.n > 50)
-    .sort((a, b) => b.n - a.n)
-    .slice(0, 3);
-
-  /* ---------- 2. 开篇钩子 ---------- */
-  const head = text.slice(0, 260);
-  const headChars = CN(head);
-  const hookLines = paras.slice(0, 2).join(' ');
-  const hookHits = Object.entries(HOOK_SIGNS).map(([k, v]) => ({
-    key: k,
-    name: v.name,
-    hits: v.words.filter(w => head.includes(w)),
-  }));
-  const hookScore = (() => {
-    let s = 0;
-    s += Math.min(40, hookHits.reduce((a, h) => a + h.hits.length, 0) * 14);
-    // 开头句长：短句更有力
-    const firstLen = CN(sents[0] || '');
-    if (firstLen && firstLen <= 18) s += 22;
-    else if (firstLen <= 30) s += 12;
-    // 前 100 字内是否出现具体场景或人物动作
-    if (/[我你他她]/.test(head.slice(0, 100))) s += 14;
-    if (/[“「"]/.test(head.slice(0, 120))) s += 12;
-    if (/[,，。]/.test(head.slice(0, 30))) s += 6;
-    return Math.max(0, Math.min(100, s));
+  /* ── 导语 = 前 300 字 ── */
+  const leadChars = Math.min(300, chars);
+  let leadEnd = text.length, acc = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (i % 3 === 0) { acc = CN(text.slice(0, i)); }
+    if (i === text.length - 1) acc = chars;
+    if (CN(text.slice(0, i)) >= leadChars) { leadEnd = i; break; }
+  }
+  const lead = text.slice(0, leadEnd).trim();
+  const leadParas = srSplitParas(lead);
+  const isLeadOnly = chars < 800;
+  // 导语的「最后一句」如果被 300 字硬切开，引原文会很别扭（「群里安静了十」）。
+  // 这种情况往下借到最近的句号为止，只用于引用展示，不影响其他指标。
+  const leadFull = (() => {
+    if (leadEnd >= text.length) return lead;
+    const rest = text.slice(leadEnd);
+    const m = rest.match(/^[^。！？!?…]{0,30}[。！？!?…]/);
+    return m ? (lead + m[0]).trim() : lead;
   })();
 
-  /* ---------- 3. 逐段特征 + 节拍 ---------- */
+  /* ── 1A 第一句 ── */
+  const firstSent = (sents[0] || '').trim();
+  const firstKind = OPEN_KINDS.find(k => k.test(firstSent)) || OPEN_KINDS[5];
+  // 对话开场 / 疑问句开场要单独判「本身反不反常」，反常就不该按 5 分、4 分算
+  const dlgStrong = srDialogStrong(firstSent);
+  let stop = dlgStrong ? 8 : firstKind.score;
+  if (CN(firstSent) <= 20) stop += 0.5;
+  if (/\d/.test(firstSent)) stop += 0.5;
+  if (/我/.test(firstSent)) stop += 0.5;
+  stop = Math.max(1, Math.min(10, Math.round(stop)));
+
+  // 第二句自己能不能立成钩子 —— 如果能，第一句就是可以删的
+  const secondSent = (sents[1] || '').trim();
+  const secondStrong = secondSent.length > 0 && (
+    OPEN_KINDS.slice(0, 3).some(k => k.test(secondSent)) || PRESSURE_PAT.test(secondSent)
+  );
+
+  /* ── 1B 三百字身份报告 ── */
+  const posOf = re => {
+    const m = lead.match(re);
+    if (!m || m.index == null) return -1;
+    return CN(lead.slice(0, m.index));
+  };
+  const idAt = posOf(ID_PAT), presAt = posOf(PRESSURE_PAT), goalAt = posOf(GOAL_PAT);
+  const threeEl = [
+    { key: 'id', name: '我是谁', hint: '身份 / 处境，具体到能被看见', at: idAt, ok: idAt >= 0 },
+    { key: 'pres', name: '我在被什么压着', hint: '冲突最好是正在发生的，不是回忆', at: presAt, ok: presAt >= 0 },
+    { key: 'goal', name: '我必须做什么', hint: '有目标，带截止时间更好', at: goalAt, ok: goalAt >= 0 },
+  ];
+  const threeScore = threeEl.filter(e => e.ok).length;
+
+  /* ── 1C 信息差 ── */
+  const known = [];
+  for (const p of leadParas) {
+    if (CN(p) < 8) continue;
+    if (PRESSURE_PAT.test(p) || /\d/.test(p) || /[“「"]/.test(p)) {
+      known.push(p.replace(/\s+/g, '').slice(0, 40));
+      if (known.length >= 3) break;
+    }
+  }
+  const unknown = [];
+  const pushU = s => { s = s.trim().replace(/\s+/g, '').slice(0, 40); if (CN(s) >= 6 && !unknown.includes(s)) unknown.push(s); };
+  (lead.match(/[^。！？\n]{6,36}[？?]/g) || []).forEach(pushU);
+  for (const m of lead.matchAll(/[^。！？\n]{2,28}?(?:为什么|怎么会|到底|竟然|原来|直到|可是|没想到|谁知道)[^。！？\n]{0,22}/g)) pushU(m[0]);
+  for (const m of lead.matchAll(/[^。！？\n]{0,14}(?:那个人|那件事|那次|那个男人|那个女人|这一切|他是谁)[^。！？\n]{0,14}/g)) pushU(m[0]);
+  const mustKnow = unknown.length > 0;
+  // 信息差方向：导语给了新信息却没悬置 = 只报到不勾人
+  const infoGap = known.length > 0 && unknown.length === 0 ? 'report'
+    : known.length === 0 && unknown.length > 0 ? 'vague'
+      : known.length === 0 && unknown.length === 0 ? 'none' : 'good';
+
+  /* ── 1D 可信感 ── */
+  // 注意：这里每个正则都带 g，直接复用会带上一次 matchAll 的 lastIndex，
+  // 造成同一条特征被重复收录，所以统一用 new RegExp(source) 无 g 版本。
+  const noG = re => new RegExp(re.source);
+  const novelHits = [];
+  NOVEL_VOICE.forEach(v => {
+    const ms = [...lead.matchAll(new RegExp(v.re.source, 'g'))];
+    if (ms.length) novelHits.push({ name: v.name, why: v.why, n: ms.length, sample: ms[0][0] });
+  });
+  const realHits = [];
+  REAL_SIGNALS.forEach(v => {
+    const ms = [...lead.matchAll(new RegExp(v.re.source, 'g'))];
+    if (ms.length) realHits.push({ name: v.name, n: ms.length, sample: ms[0][0] });
+  });
+  const novelDensity = leadChars ? novelHits.reduce((a, x) => a + x.n, 0) / leadChars * 300 : 0;
+
+  /* ── 1E 导语结尾 ── */
+  const leadSents = srSplitSents(leadFull);
+  const leadLast = (leadSents[leadSents.length - 1] || '').trim();
+  let leadEndT = 0; // 0 平 1 悬置 2 回收
+  if (/[？?]/.test(leadLast)) leadEndT = 1;
+  if (/(可是|但是|然而|直到|才发现|没想到|原来|谁知道)/.test(leadLast)) leadEndT = 1;
+  if (/(就这样|再也没有|再也没|后来他|后来我)/.test(leadLast)) leadEndT = 2;
+  if (CN(leadLast) > 55) leadEndT = Math.max(0, leadEndT - 1);
+  const leadEndScore = Math.max(1, Math.min(10, 4 + (leadEndT === 1 ? 4 : leadEndT === 2 ? 2 : 0) + (CN(leadLast) <= 18 ? 2 : 0)));
+
+  /* ── 2A 章节功能 ── */
+  const secInfo = sections.map((s, i) => {
+    const n = CN(s.body);
+    const { main, focus, sig } = srSecMain(s.body);
+    return { title: s.title, body: s.body, i, n, main, focus, sig };
+  });
+  const dupSec = [];
+  for (let i = 1; i < secInfo.length; i++) {
+    const a = secInfo[i - 1], b = secInfo[i];
+    if (b.main !== '杂糅' && b.main === a.main && b.n > 100) {
+      dupSec.push({ a: a.title, b: b.title, kind: b.main });
+    }
+  }
+
+  /* ── 2B 水分 ── */
   const paraInfo = paras.map((p, i) => {
     const n = CN(p);
-    const dlgN = CN((p.match(/[“「"][^”」"]*[”」"]/g) || []).join(''));
-    const f = {
-      dlgRatio: n ? dlgN / n : 0,
-      verbRate: n ? ((p.match(VERB_RE) || []).length) / n : 0,
-      thinkCount: (p.match(THINK_RE) || []).length,
-      sceneCount: (p.match(SCENE_RE) || []).length,
-      timeCount: (p.match(TIME_RE) || []).length,
-    };
-    const kind = PARA_KINDS.find(k => k.test(p, f)) || { key: 'desc', name: '叙述', cls: '' };
-    return { i, p, n, ...f, kind };
+    const dlgN = CN((p.match(/[“「"][^”」"]{2,}[”」"]/g) || []).join(''));
+    const dlgRatio = n ? dlgN / n : 0;
+    const verbs = (p.match(VERB_RE) || []).length;
+    const think = (p.match(THINK_RE) || []).length;
+    const scene = (p.match(SCENE_RE) || []).length;
+    const time = (p.match(TIME_RE) || []).length;
+    const emo = (p.match(/(哭|吼|骂|摔|砸|撕|扇|打|血|死|崩|疯|恨|痛|疼|尖叫|发抖|窒息|绝望|崩溃)/g) || []).length;
+    const info = verbs + think * 2 + scene * .5 + emo * 2 + (dlgRatio > .3 ? 3 : 0);
+    // 空转：没动作、没新信息、没情绪，全在绕
+    const empty = info < 3 && n > 45 && think === 0 && emo === 0;
+    // 累积：有东西在往上走
+    const accumulate = emo > 0 || verbs >= 3 || think >= 1;
+    return { i, p, n, dlgRatio, verbs, think, scene, time, emo, info, empty, accumulate };
   });
+  const waterParas = paraInfo.filter(x => x.empty);
+  const waterChars = waterParas.reduce((a, x) => a + x.n, 0);
+  const effectiveChars = Math.max(0, chars - waterChars);
 
-  const totalChars = paraInfo.reduce((a, x) => a + x.n, 0) || 1;
-  const cum = cumulative(paraInfo, x => x.n);
-  const at = pct => cum.findIndex(c => c >= totalChars * pct) + 1 || paraInfo.length;
-
-  /* ---------- 4. 情绪曲线 ---------- */
-  const EMO_RE = {
-    strong: /(哭|吼|骂|摔|砸|撕|扇|打|血|死|崩|疯|恨|痛|疼|尖叫|发抖|窒息|绝望|崩溃)/g,
-    mid: /(笑|慌|急|怕|怒|气|惊|愣|沉默|红|湿|颤|咬|握紧|喘)/g,
-    low: /(说|问|答|看|走|坐|站|听|想|觉得|知道)/g,
-    neg: /(不|没|无|别|嘛|呢|吧)/g,
-  };
+  /* ── 2D 情绪曲线 ── */
   const intensity = paraInfo.map(x => {
-    const s = (x.p.match(EMO_RE.strong) || []).length * 3
-      + (x.p.match(EMO_RE.mid) || []).length * 1.6
-      + (x.dlgRatio > .4 ? 2 : 0)
-      + (/[！!]/.test(x.p) ? 1.5 : 0)
-      + (/[？?]/.test(x.p) ? 1 : 0);
-    return Math.min(10, s / Math.max(1, x.n / 60));
+    const s = x.emo * 3 + x.think * 1.2 + (x.dlgRatio > .4 ? 2 : 0)
+      + (/[！!]/.test(x.p) ? 1.5 : 0) + (/[？?]/.test(x.p) ? 1 : 0);
+    return s / Math.max(1, x.n / 60);
   });
-  // 归一化到 0-100
   const mx = Math.max(...intensity, 1);
-  const curve = intensity.map(v => Math.round(v / mx * 100));
-
-  // 平淡区：连续 ≥3 段低于 35%
-  const flat = [];
+  const curve = intensity.map(v => Math.round(Math.min(1, v / mx) * 100));
+  const headEnd = Math.max(1, Math.floor(curve.length * 0.3));
+  const headPeaks = curve.slice(0, headEnd).filter(v => v >= 88).length;
+  const tailMax = curve.length > headEnd ? Math.max(...curve.slice(headEnd)) : 0;
+  const overdraft = headPeaks >= 2 && tailMax < 88;
+  const holes = [];
   for (let i = 0; i < curve.length; i++) {
     if (curve[i] < 35) {
       let j = i;
       while (j < curve.length && curve[j] < 35) j++;
-      if (j - i >= 3) flat.push({ from: i + 1, to: j, wc: paraInfo.slice(i, j).reduce((a, x) => a + x.n, 0) });
+      if (j - i >= 3) holes.push({ from: i + 1, to: j, wc: paraInfo.slice(i, j).reduce((a, x) => a + x.n, 0) });
       i = j;
     }
   }
 
-  /* ---------- 5. 重复用词 ---------- */
-  /* 中文没有空格，滑窗切出来的 2-4 字片段大多数不是词（「楼我穿」「着婚纱」）。
-     硬用统计切词效果很差，所以换个思路：不追求切得准，而是要求「同一片段在
-     不同句子里反复出现」——真词才可能这样，跨词的碎片不会。
-     ① 片段必须跨越至少 2 个不同句子出现 ≥2 次
-     ② 头尾不能是虚词
-     ③ 整词命中空泛词表 → 丢
-     ④ 长度优先，长的吞掉短的 */
-  const FUNC = /[的了是在我你他她它们这那就也和与都还又很太更最一二三四五六七八九十上下里吗呢吧啊着过不没有说会能要可把被让给对从到个些什怎样因为所以但而却已只再更于其之以所而且并或]/;
-  const BORING = /^(声音|出来|起来|下来|上去|过来|回来|进去|一个|一些|一点|一下|一阵|这样|那样|什么|怎么|这里|那里|时候|现在|已经|只是|还有|就是|不是|可以|觉得|知道|自己|我们|你们|他们|她们|的话|一样|一边|有点|好像|忽然|突然|然后|接着|于是|因为|所以|但是|而且|如果|虽然|不过|其实|真的|非常|一直|刚刚|马上|立刻|开始)$/;
+  /* ── 2C 人物可信度 ── */
+  const people = srFindPeople(text);
 
-  // 按句子粒度统计：每个片段记录它出现在哪些句子里
-  const sentList = sents.filter(s => CN(s) >= 4);
-  const where = new Map();   // 片段 -> Set(句子索引)
-  const count = new Map();   // 片段 -> 出现次数
-  sentList.forEach((s, si) => {
-    const clean = s.replace(/[^\u4e00-\u9fa5]/g, '|').split(/\|+/).filter(x => x.length >= 2);
-    for (const run of clean) {
-      for (let n = 2; n <= 4; n++) {
-        for (let i = 0; i + n <= run.length; i++) {
-          const w = run.slice(i, i + n);
-          if (FUNC.test(w) || BORING.test(w)) continue;
-          if (FUNC.test(w[0]) || FUNC.test(w[w.length - 1])) continue;
-          count.set(w, (count.get(w) || 0) + 1);
-          if (!where.has(w)) where.set(w, new Set());
-          where.get(w).add(si);
-        }
-      }
-    }
+  /* ── 3A 付费卡点 ── */
+  const cutIdx = headed ? Math.min(secInfo.length - 1, 3) : Math.max(1, Math.floor(paras.length * 0.3));
+  const beforeCut = headed
+    ? secInfo.slice(0, cutIdx + 1).map(s => s.body).join('\n')
+    : paras.slice(0, cutIdx).join('\n');
+  const cutHook = [...beforeCut.matchAll(/[^。！？\n]{2,34}?(?:为什么|怎么会|到底|竟然|原来|直到|可是|没想到|不知道|谁)[^。！？\n]{0,24}/g)]
+    .map(m => m[0].trim().replace(/\s+/g, '').slice(0, 46))
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, 3);
+  const cutHasHook = cutHook.length > 0;
+
+  /* ── 3B 题材兑现 ── */
+  // 承诺词在导语里出现只代表「提了一嘴」，要看它在正文里有没有真的发生。
+  // 找首次出现位置；如果只在导语出现、后面再不出现，那就是「说完就不管了」。
+  const PROMISE = /(离婚|出轨|小三|婆婆|彩礼|复仇|报复|身世|遗产|豪门|重生|穿越|杀|失踪|报警|打脸|反转|背叛|私生|认亲|葬礼|婚礼|遗书)/g;
+  const promised = [...new Set(lead.match(PROMISE) || [])];
+  const payoffs = promised.map(w => {
+    // 全文里所有出现位置，排除落在导语内的（导语里提到不算兑现）
+    const hits = [];
+    let idx = -1;
+    while ((idx = text.indexOf(w, idx + 1)) >= 0) hits.push(idx);
+    const bodyHits = hits.filter(i => i >= leadEnd);
+    const first = bodyHits.length ? bodyHits[0] : -1;
+    const paraIdx = first < 0 ? -1 : paraInfo.findIndex(x => x.p.includes(w));
+    // 只在导语出现 → 承诺了没兑现
+    const onlyLead = hits.length > 0 && bodyHits.length === 0;
+    return { w, at: first, paraIdx, onlyLead, total: hits.length, early: paraIdx >= 0 && paraIdx < Math.max(3, paras.length * 0.25) };
   });
+  const delayed = payoffs.filter(p => p.paraIdx < 0 || !p.early);
 
-  const cand = [...count.entries()]
-    // 同样出现 ≥2 次，且分散在 ≥2 个句子里（跨句才可能是词）
-    .filter(([w, c]) => c >= 2 && (where.get(w) || new Set()).size >= 2)
-    .filter(([w]) => w.length >= 2)
-    .sort((a, b) => b[1] * b[0].length - a[1] * a[0].length);
-  const kw = [];
-  for (const [w, c] of cand) {
-    if (kw.some(k => k.includes(w) || w.includes(k))) continue;
-    kw.push(w);
-    if (kw.length >= 10) break;
-  }
+  /* ── 3C 结尾 ── */
+  const lastParas = paras.slice(-2).join('');
+  const lastSent = (srSplitSents(lastParas).pop() || '').trim();
+  let endScore = 4;
+  if (/[？?]/.test(lastSent)) endScore += 2;
+  if (CN(lastSent) <= 18) endScore += 2;
+  if (/(没有回头|没有再说|不知道|后来|再也|再没|终于|就这样|才明白|原来)/.test(lastSent)) endScore += 3;
+  if (CN(lastSent) > 50) endScore -= 2;
+  endScore = Math.max(1, Math.min(10, endScore));
 
-  /* ---------- 6. 人物 ---------- */
-  /* 不用通用姓名规则（「酒店三楼」会被当成姓「酒」的人），改成三级证据：
-     ① 称谓词：出现 ≥2 次就算
-     ② 被引号/叙述动词修饰过的专名：X说 / X道 / 叫X / X愣 —— 只取动词前 2~3 字
-     ③ 用户名回填：文中出现过「他叫陈默」「她叫小周」这类，直接认定为人物 */
-  const nameHits = new Map();
-  const bump = (w, n) => nameHits.set(w, (nameHits.get(w) || 0) + n);
-
-  const titleList = ['妈妈', '爸爸', '母亲', '父亲', '老公', '老婆', '婆婆', '公公', '小三', '继母', '继父', '亲妈', '后妈', '姐姐', '妹妹', '哥哥', '弟弟', '闺蜜', '老板', '同事', '男友', '女友', '前夫', '前妻', '未婚夫', '未婚妻', '儿子', '女儿', '奶奶', '爷爷', '外婆', '外公', '舅舅', '姑姑', '姨妈', '阿姨', '叔叔', '婶婶', '嫂子', '大伯'];
-  for (const t of titleList) {
-    const n = (text.match(new RegExp(t, 'g')) || []).length;
-    if (n >= 2) bump(t, n);
-  }
-
-  // ② 明确被指认的名字（破折号、引号、逗号都可能是边界）
-  for (const m of text.matchAll(/(?:叫|名叫|叫做|名字是)\s*([\u4e00-\u9fa5]{2,3})/g)) {
-    bump(m[1], Math.max(2, (text.match(new RegExp(m[1], 'g')) || []).length));
-  }
-
-  // ③ 叙述动词前后的专名
-  const NAME_CTX = /([\u4e00-\u9fa5]{2,3})(?=(?:说|道|问|答|笑|哭|喊|吼|愣|点头|摇头|皱眉|看了我一眼|走过来|转身))/g;
-  for (const m of text.matchAll(NAME_CTX)) {
-    const w = m[1];
-    // 去掉动词吃掉的一节：「陈默从里间出来，手还插」不会误伤
-    if (w.length < 2) continue;
-    // 排除以常见非姓氏字开头的词
-    if (/^[的了她他它们这那就也和与都还又很太最一二三四五六七八九十上下里吗呢吧啊着过不没有把被让给对从到个些什怎样因为所以但而却已只再更酒店屋门窗声手眼口心时天日年月]/.test(w)) continue;
-    const n = (text.match(new RegExp(w, 'g')) || []).length;
-    if (n >= 2 && n <= Math.ceil(text.length / 60)) bump(w, n);
-  }
-  // 去掉互相包含的（「小周」和「周」同时存在时留长的）
-  const people = [...nameHits.entries()]
-    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
-    .filter(([w], i, arr) => !arr.slice(0, i).some(([k]) => k.includes(w) || w.includes(k)))
-    .slice(0, 8);
-
-  /* ---------- 7. 场景切换 ---------- */
-  const sceneShifts = [];
-  for (let i = 1; i < paraInfo.length; i++) {
-    if (paraInfo[i].timeCount || (paraInfo[i].sceneCount >= 3 && paraInfo[i - 1].sceneCount >= 3)) {
-      if (paraInfo[i].timeCount) sceneShifts.push({ at: i + 1, word: (paraInfo[i].p.match(TIME_RE) || [])[0] });
-    }
-  }
-
-  /* ---------- 8. 段落长度分布 ---------- */
-  const paraLens = paraInfo.map(x => x.n);
-  const avgPara = Math.round(paraLens.reduce((a, b) => a + b, 0) / Math.max(1, paraLens.length));
-  const longParas = paraInfo.filter(x => x.n > avgPara * 2.2 && x.n > 90).slice(0, 3);
+  /* ── 4A 三维评分 ── */
+  const clamp10 = v => Math.max(1, Math.min(10, Math.round(v)));
+  const leadScore = clamp10(stop * .34 + (threeScore / 3 * 10) * .26
+    + (infoGap === 'good' ? 10 : infoGap === 'report' ? 5 : infoGap === 'vague' ? 4 : 2) * .18
+    + (novelDensity <= 1 ? 9 : novelDensity <= 3 ? 6 : novelDensity <= 6 ? 3 : 1) * .12
+    + leadEndScore * .10);
+  const readScore = clamp10(
+    Math.max(0, 10 - waterParas.length * 1.1) * .40
+    + (holes.length === 0 ? 10 : Math.max(2, 10 - holes.length * 2.4)) * .28
+    + Math.max(0, 10 - dupSec.length * 2.4) * .16
+    + (headed ? 8.5 : 5.5) * .16);
+  const payScore = clamp10(
+    (cutHasHook ? 8.5 : 3) * .38
+    + Math.max(0, 10 - delayed.length * 2.6) * .33
+    + endScore * .29);
 
   return {
-    raw: text,
-    chars, paras: paraInfo.length, sents: sents.length, avg, dRate,
-    mins: Math.max(1, Math.round(chars / 400)),
-    buckets, longSents,
-    hook: { text: hookLines.slice(0, 90), hits: hookHits, score: hookScore, headChars },
-    paraInfo, cum, totalChars,
-    curve, flat, sceneShifts, at,
-    kw: kw.map(w => ({ w, n: count.get(w) })),
+    raw: text, chars, nParas: paraInfo.length, nSents: sents.length,
+    isLeadOnly, lead, leadChars,
+    sections: secInfo, headed,
+    first: { text: firstSent, kind: firstKind, stop, secondSent, secondStrong, dlgStrong },
+    threeEl, threeScore,
+    known, unknown, mustKnow, infoGap,
+    novelHits, realHits, novelDensity,
+    leadLast, leadEndT, leadEndScore,
+    dupSec,
+    paraInfo, waterParas, waterChars, effectiveChars,
+    curve, holes, overdraft, headPeaks, tailMax,
     people,
-    avgPara, longParas,
+    cutIdx, cutHook, cutHasHook,
+    promised, payoffs, delayed,
+    lastSent, endScore,
+    score: { lead: leadScore, read: readScore, pay: payScore },
   };
 }
 
-/* ---------- 评分换算 ---------- */
-function grade(score) {
-  if (score >= 76) return { label: '强', cls: 'good' };
-  if (score >= 50) return { label: '中', cls: 'mid' };
-  return { label: '弱', cls: 'bad' };
+/* ---------- 6.3 人物识别（三级证据） ---------- */
+function srFindPeople(text) {
+  const found = new Map(); // name -> {n, firstAt, titles:Set}
+  const bump = (name, at, title) => {
+    if (!name || CN(name) < 2) return;
+    const cur = found.get(name) || { n: 0, firstAt: at, titles: new Set() };
+    cur.n++; if (title) cur.titles.add(title);
+    found.set(name, cur);
+  };
+
+  const TITLES = ['妈', '妈', '爸', '爸', '婆婆', '公公', '老公', '老婆', '未婚夫', '男朋友', '女朋友',
+    '姐姐', '妹妹', '哥哥', '弟弟', '小姑子', '小叔子', '大姑姐', '姨妈', '姑姑', '舅舅',
+    '领导', '老板', '经理', '主管', '同事', '闺蜜', '房东', '中介', '医生', '护士', '老师', '班长'];
+  // 第一级：称谓白名单
+  TITLES.forEach(t => {
+    const re = new RegExp(t, 'g');
+    let m, c = 0;
+    while ((m = re.exec(text)) && c < 60) { bump(t, m.index, t); c++; }
+  });
+
+  // 第二级：「叫 / 名叫 / 名字是」后面的名字
+  for (const m of text.matchAll(/(?:叫|名叫|名字是|名字叫|叫作|自称)[「“"]?([\u4e00-\u9fa5]{2,3})/g)) {
+    const nm = m[1];
+    const stop = ['了一', '了声', '我', '你', '他', '她', '什么', '这个', '那个', '一声', '起来'];
+    if (stop.some(s => nm.startsWith(s))) continue;
+    bump(nm, m.index, '');
+  }
+
+  // 第三级：叙述动词前 2 字（「陈默说」），要求像姓氏开头
+  const SURNAME = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜谢邹喻柏水窦章苏潘葛范彭鲁韦马苗方俞任袁柳唐罗薛雷贺倪汤殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫房裘缪干解应宗丁宣邓郁单杭洪包诸左石崔吉钮龚程嵇邵邢裴陆荣翁荀羊甄曲封芮储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴鬱胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍却璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公';
+  for (const m of text.matchAll(/([\u4e00-\u9fa5]{2,3})(?=(?:说|问|答|笑|看|走|站|推|拉|抬手|回头|低头|点头|摇头|叹气|沉默|伸手|接|拿|转过身|皱眉|抬头))/g)) {
+    const nm = m[1];
+    if (!SURNAME.includes(nm[0])) continue;
+    if (nm.length === 2 && !SURNAME.includes(nm[1]) && !/[\u4e00-\u9fa5]/.test(nm[1])) continue;
+    bump(nm, m.index, '');
+  }
+
+  const out = [...found.entries()]
+    .map(([name, v]) => ({ name, n: v.n, firstAt: v.firstAt, title: [...v.titles][0] || '' }))
+    .filter(x => x.n >= 2 || x.title)
+    .sort((a, b) => b.n - a.n);
+
+  // 主线人物 = 最早出现 + 出现较多；配角是只出现 2 次的
+  const lead = out.filter(x => x.n >= 3).slice(0, 4);
+  const minor = out.filter(x => x.n === 2).slice(0, 6);
+  // 只有称谓没名字 —— 人物是「功能位」不是人
+  const onlyTitle = out.filter(x => !x.title && x.n >= 3).length;
+  return { all: out.slice(0, 8), lead, minor, onlyTitle };
 }
 
-function curvePath(curve, w, h) {
-  if (curve.length < 2) return '';
+/* ---------- 6.4 渲染工具 ---------- */
+function srCurvePath(curve, w, h) {
+  if (!curve.length) return '';
+  if (curve.length === 1) {
+    const y = h - (curve[0] / 100) * h;
+    return `M0,${y.toFixed(1)} L${w},${y.toFixed(1)}`;
+  }
   const step = w / (curve.length - 1);
   const pts = curve.map((v, i) => [i * step, h - (v / 100) * h]);
-  // 平滑曲线
   let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
     const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
     const cx = (x0 + x1) / 2;
     d += ` C${cx.toFixed(1)},${y0.toFixed(1)} ${cx.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
   }
-  return { d, pts };
+  return d;
 }
 
-function renderReport(box, r) {
-  const g = grade(r.hook.score);
-  const hookRatio = Math.round(r.hook.headChars / Math.max(1, r.chars) * 100);
+const srLv = s => (s >= 8 ? 'good' : s >= 6 ? 'mid' : s >= 4 ? 'warn' : 'bad');
+const srLvName = s => (s >= 8 ? '过关' : s >= 6 ? '及格' : s >= 4 ? '需改' : '不过关');
 
-  /* 句长分布条形 —— 用 CSS 百分比宽度，不用 flex，避免被压缩看不见 */
-  const maxBucket = Math.max(...r.buckets.map(b => b.n), 1);
-  const totalSent = r.buckets.reduce((a, b) => a + b.n, 0) || 1;
-  const bucketHtml = r.buckets.map(b => `
-    <div class="an-bar-row">
-      <div class="an-bar-l">${b.label}</div>
-      <div class="an-bar-track"><div class="an-bar-fill" style="width:${Math.round(b.n / maxBucket * 100)}%"></div></div>
-      <div class="an-bar-n">${b.n}<em>${Math.round(b.n / totalSent * 100)}%</em></div>
-    </div>`).join('');
+/* ---------- 6.5 四步报告渲染 ---------- */
 
-  /* 段落节奏条（按功能着色的色带）
-     flex-grow 用权重而不是百分比，再多段也能铺满；
-     段数超过 40 就不显示字数和标题了，免得挤成一团 */
-  const dense = r.paraInfo.length > 40;
-  const mapHtml = r.paraInfo.map((x, i) => {
-    const w = Math.max(1, x.n);
-    return `<span class="an-map-cell k-${x.kind.key}" style="flex:${w} 1 0"
-              title="第 ${i + 1} 段 · ${x.kind.name} · ${x.n} 字">${!dense && x.n >= 40 ? x.n : ''}</span>`;
-  }).join('');
+/* 通用小零件 */
+const srQ = s => `<span class="sr-q">“${esc(s)}”</span>`;
+const srAt = n => (n == null || n < 0 ? '—' : `第 ${n} 字`);
 
-  /* 情绪曲线 */
-  const CW = 100, CH = 42;
-  // 只有 1 个点时画不出线，直接给一条平直的占位，别留空白
-  const path = r.curve.length >= 2
-    ? curvePath(r.curve, CW, CH)
-    : { d: `M0,${(CH - CH * (r.curve[0] || 0) / 100).toFixed(1)} L${CW},${(CH - CH * (r.curve[0] || 0) / 100).toFixed(1)}` };
-  const flatZones = r.flat.map(f => {
-    const x1 = (f.from - 1) / Math.max(1, r.curve.length - 1) * CW;
-    const x2 = (f.to - 1) / Math.max(1, r.curve.length - 1) * CW;
-    return `<rect x="${x1.toFixed(1)}" y="0" width="${Math.max(1.5, x2 - x1).toFixed(1)}" height="${CH}" fill="var(--sys-orange)" opacity=".14"/>`;
-  }).join('');
+function srItem(step, code, title, lv, body) {
+  return `<div class="sr-item lv-${lv}">
+    <div class="sr-item-h"><span class="sr-code">${code}</span><span>${title}</span></div>
+    <div class="sr-item-b">${body}</div>
+  </div>`;
+}
 
-  const kindLegend = PARA_KINDS.map(k => `<span class="an-legend k-${k.key}"><i></i>${k.name}</span>`).join('')
-    + `<span class="an-legend k-desc"><i></i>叙述</span>`;
+function srLeadCheck(r) {
+  const o = [];
+  const f = r.first;
 
-  box.innerHTML = `
-    ${r.chars < 300 ? '<div class="an-warn">正文较短，统计意义有限，建议至少 300 字。</div>' : ''}
+  /* ── 1-A ── */
+  let a;
+  if (f.dlgStrong) {
+    // 对话开场本来是弱类型，但这一句一开口就在冲突里，属于 skill 说的「除非对话本身反常」
+    a = `<p>第一句是<b>对话开场</b>。这类开场最容易失效，但这一句是例外 —— <b>它一开口就在冲突里</b>，不是问候也不是寒暄，而是指控。停手指 ${f.stop}/10。</p>`;
+  } else if (f.stop >= 8) {
+    a = `<p>第一句是<b>${f.kind.name}</b>，${f.kind.desc}。停手指 ${f.stop}/10，抓得住。</p>`;
+  } else if (f.stop >= 5) {
+    a = `<p>第一句是<b>${f.kind.name}</b>，${f.kind.desc}。停手指 ${f.stop}/10 —— 不算差，但它<b>不制造问题</b>。读者读完不会想知道后面，只会想「哦」。</p>`;
+  } else {
+    a = `<p>第一句是<b>${f.kind.name}</b>，${f.kind.desc}。<b>停手指 ${f.stop}/10，这就是判死的类型。</b>读者在知乎刷到这一段，手指已经在往上滑了。</p>`;
+  }
+  a += `<p class="sr-snip">${srQ(f.text)}</p>`;
+  if (f.secondStrong) {
+    a += `<p class="sr-red">第二句<u>自己就能立成钩子</u>（${srQ(f.secondSent.slice(0, 40))}）。也就是说，第一句是<b>可以删的</b>——删了从第二句起，反而更快。</p>`;
+  } else if (f.dlgStrong) {
+    a += `<p class="sr-dim">第二句接的是<b>动作反应</b>（砸东西、摔门、还手），这是对的 —— 一句狠话配一个具体动作，比再补一句对白有力。别在这两句之间插解释。</p>`;
+  } else {
+    a += `<p class="sr-dim">第二句接的是补充说明，不是新钩子。现在这版是「一句话开场 + 解释」，节奏是对的，问题只在第一句本身不够反常。</p>`;
+  }
+  o.push(srItem(1, '1-A', '第一句测试', srLv(f.stop), a));
 
-    <div class="an-hero">
-      <div class="an-hero-top">
-        <div>
-          <div class="an-hero-l">开篇钩子</div>
-          <div class="an-hero-q">“${esc(r.hook.text)}”</div>
-        </div>
-        <div class="an-score ${g.cls}">
-          <b>${r.hook.score}</b><span>${g.label}</span>
-        </div>
-      </div>
-      <div class="an-hero-chips">
-        ${r.hook.hits.map(h => h.hits.length
-          ? `<span class="an-chip on">${h.name} ${h.hits.length}</span>`
-          : `<span class="an-chip">${h.name} 0</span>`).join('')}
-      </div>
-      <div class="an-hero-foot">前 100 字占全文 ${hookRatio}%${r.hook.hits.every(h => !h.hits.length) ? ' · 开篇没有明显冲突/悬念/反常信号' : ''}</div>
-    </div>
-
-    <div class="an-tiles">
-      <div class="an-tile"><b>${r.chars.toLocaleString()}</b><span>总字数</span></div>
-      <div class="an-tile"><b>${r.mins} 分</b><span>阅读时长</span></div>
-      <div class="an-tile"><b>${r.paras}</b><span>段落</span></div>
-      <div class="an-tile"><b>${r.avg}</b><span>平均句长</span></div>
-      <div class="an-tile"><b>${r.dRate}%</b><span>对话占比</span></div>
-      <div class="an-tile"><b>${r.avgPara}</b><span>平均段长</span></div>
-    </div>
-
-    <div class="an-sec">
-      <div class="an-sec-h">情绪曲线<span class="an-sec-s">逐段强度，越高峰值越高</span></div>
-      <div class="an-curve">
-        <svg viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none">
-          ${flatZones}
-          <path d="${path.d}" fill="none" stroke="var(--sys-pink)" stroke-width="1.1" stroke-linecap="round"/>
-          <path d="${path.d} L${CW},${CH} L0,${CH} Z" fill="var(--sys-pink)" opacity=".10"/>
-        </svg>
-      </div>
-      <div class="an-curve-x"><span>开头</span><span>中段</span><span>结尾</span></div>
-      ${r.flat.length
-      ? `<div class="an-note">发现 ${r.flat.length} 处平淡区（橙色带）：${r.flat.map(f => `第 ${f.from}–${f.to} 段 · ${f.wc} 字`).join('，')}</div>`
-      : '<div class="an-note ok">没有连续 3 段以上的低强度区，节奏保持得住</div>'}
-    </div>
-
-    <div class="an-sec">
-      <div class="an-sec-h">段落节奏<span class="an-sec-s">按字数成比例，颜色是功能</span></div>
-      <div class="an-map">${mapHtml}</div>
-      <div class="an-legend-row">${kindLegend}</div>
-      <div class="an-note">前 25% 落在第 ${r.at(.25)} 段，中点在第 ${r.at(.5)} 段，3/4 处在第 ${r.at(.75)} 段</div>
-    </div>
-
-    <div class="an-sec">
-      <div class="an-sec-h">句长分布<span class="an-sec-s">短句提速，长句压气氛</span></div>
-      ${bucketHtml}
-      ${r.longSents.length ? `<div class="an-note">最长的 ${r.longSents.length} 句（超 50 字），可考虑拆开：<div class="an-long">${r.longSents.map(x => `<div>· ${esc(x.s.slice(0, 60))}…<i>${x.n} 字</em></div>`).join('')}</div></div>` : ''}
-    </div>
-
-    <div class="an-sec">
-      <div class="an-sec-h">人物<span class="an-sec-s">按出现次数排</span></div>
-      ${r.people.length
-      ? `<div class="an-people">${r.people.map(([n, c], i) => `<span class="an-person${i === 0 ? ' lead' : ''}">${esc(n)}<i>${c}</i></span>`).join('')}</div>`
-      : '<div class="an-note">没识别出反复出现的人物名，可能通篇用「我/你/他」，也可能是称呼多变。</div>'}
-      <div class="an-note">场景/时间切换 ${r.sceneShifts.length} 处${r.sceneShifts.length ? '：' + r.sceneShifts.slice(0, 6).map(s => `第 ${s.at} 段「${esc(s.word)}」`).join('，') : ''}</div>
-    </div>
-
-    <div class="an-sec">
-      <div class="an-sec-h">重复用词<span class="an-sec-s">点一下看上下文</span></div>
-      <div class="an-kw">${r.kw.length ? r.kw.map(k => `<button class="an-kw-item" data-w="${esc(k.w)}">${esc(k.w)}<i>${k.n}</i></button>`).join('') : '<span class="an-note">没有明显重复</span>'}</div>
-      <div class="an-kw-out" id="anKwOut"></div>
-    </div>
-
-    <div class="an-sec">
-      <div class="an-sec-h">诊断</div>
-      <div class="an-diag">${diagnose(r)}</div>
-    </div>
-
-    <div class="an-foot">全部本地计算 · 规则统计，不判断好坏，只看结构</div>`;
-
-  // 重复词点开看上下文
-  const out = box.querySelector('#anKwOut');
-  box.querySelectorAll('.an-kw-item').forEach(b => {
-    b.onclick = () => {
-      const w = b.dataset.w;
-      const ctx = [];
-      const raw = r.raw || '';
-      let idx = -1;
-      while ((idx = raw.indexOf(w, idx + 1)) >= 0 && ctx.length < 4) {
-        const from = Math.max(0, idx - 14), to = idx + w.length + 14;
-        ctx.push({ pre: raw.slice(from, idx), hit: w, post: raw.slice(idx + w.length, to) });
-      }
-      out.innerHTML = ctx.length
-        ? ctx.map(c => `<div class="an-ctx">…${esc(c.pre.replace(/\n/g, ' '))}<em>${esc(c.hit)}</em>${esc(c.post.replace(/\n/g, ' '))}…</div>`).join('')
-        : '';
-    };
+  /* ── 1-B ── */
+  const hit = r.threeScore;
+  let b = `<p>前 ${r.leadChars} 字里，三件事各占多少：</p><div class="sr-3el">`;
+  r.threeEl.forEach(e => {
+    b += `<div class="sr-3row ${e.ok ? 'on' : 'off'}">
+      <i>${e.ok ? '✓' : '✕'}</i>
+      <div><b>${e.name}</b><span>${e.hint}</span></div>
+      <em>${e.ok ? srAt(e.at) : '没出现'}</em>
+    </div>`;
   });
+  b += `</div>`;
+  if (hit === 3) b += `<p class="sr-green">三样齐了。这是能过审的导语骨架。</p>`;
+  else if (hit === 2) {
+    const miss = r.threeEl.find(e => !e.ok);
+    b += `<p class="sr-red">缺「<b>${miss.name}</b>」—— ${miss.hint}。三百字里读者还没搞清楚这件事，他不会往下翻。</p>`;
+  } else if (hit === 1) {
+    const miss = r.threeEl.filter(e => !e.ok).map(e => e.name);
+    b += `<p class="sr-red">只中一样。缺 ${miss.join('、')}。现在这三百字更像一段<b>气氛描写</b>，不是一个「有人在扛某事」的开头。</p>`;
+  } else {
+    b += `<p class="sr-red"><b>三样全缺。</b>这不是导语，这是垫场。三百字读完，读者说不出主角是谁、被什么压着、要干什么。</p>`;
+  }
+  o.push(srItem(1, '1-B', '三百字身份报告', hit === 3 ? 'good' : hit === 2 ? 'mid' : hit <= 1 ? 'bad' : 'warn', b));
+
+  /* ── 1-C ── */
+  let c = `<div class="sr-gap">`;
+  c += `<div class="sr-gap-col"><div class="sr-gap-h up">读者已经知道</div>${
+    r.known.length ? r.known.map(x => `<div class="sr-gap-l">${esc(x)}</div>`).join('') : '<div class="sr-gap-l dim">（没有给到任何可确认的事实）</div>'
+  }</div>`;
+  c += `<div class="sr-gap-col"><div class="sr-gap-h down">读者还不知道</div>${
+    r.unknown.length ? r.unknown.map(x => `<div class="sr-gap-l">${esc(x)}</div>`).join('') : '<div class="sr-gap-l dim">（没有悬置任何问题）</div>'
+  }</div>`;
+  c += `</div>`;
+  if (r.infoGap === 'good') c += `<p class="sr-green">两边都有。这就是信息差：<b>已经发生的坏事是确定的，为什么发生是不确定的。</b>读者为了补上右边那栏，会往下读。</p>`;
+  else if (r.infoGap === 'report') c += `<p class="sr-red">左边满、右边空 —— <b>只报到，不勾人。</b>把事说完了，但没留任何「我得知道」的口子。加一句悬置（反问一句就够了）比再写五十字细节管用。</p>`;
+  else if (r.infoGap === 'vague') c += `<p class="sr-red">右边有悬念，左边几乎没事实。<b>读者不知道在悬什么。</b>悬念必须挂在一件具体的事上，否则就是空转。</p>`;
+  else c += `<p class="sr-red"><b>两边都是空的。</b>这三百字既没交代事实，也没埋问题 —— 读者读完什么都没得到。</p>`;
+  o.push(srItem(1, '1-C', '信息差检查', r.infoGap === 'good' ? 'good' : r.infoGap === 'none' ? 'bad' : 'warn', c));
+
+  /* ── 1-D ── */
+  const nDense = r.novelDensity;
+  let d = `<div class="sr-two">`;
+  d += `<div class="sr-two-col"><div class="sr-gap-h down">小说腔 ${r.novelHits.length ? r.novelHits.reduce((a, x) => a + x.n, 0) : 0} 处</div>${
+    r.novelHits.length
+      ? r.novelHits.map(x => `<div class="sr-tag-row"><span class="sr-tag bad">${esc(x.sample)}</span><span>${esc(x.name)}</span></div>`).join('')
+      : '<div class="sr-gap-l dim">没有明显的小说腔，很好</div>'
+  }</div>`;
+  d += `<div class="sr-two-col"><div class="sr-gap-h up">真事感 ${r.realHits.reduce((a, x) => a + x.n, 0)} 处</div>${
+    r.realHits.length
+      ? r.realHits.map(x => `<div class="sr-tag-row"><span class="sr-tag good">${esc(x.sample)}</span><span>${esc(x.name)}</span></div>`).join('')
+      : '<div class="sr-gap-l dim">没有任何具体的东西 —— 没有金额、没有 App、没有职业、没有时间点</div>'
+  }</div>`;
+  d += `</div>`;
+  if (r.novelHits.length) {
+    const top = r.novelHits[0];
+    d += `<p class="sr-red">最高频的是「${esc(top.name)}」：${esc(top.why)}。</p>`;
+  }
+  if (nDense <= 1 && r.realHits.length >= 2) d += `<p class="sr-green">密度合格。导语里有能摸到的东西，读者会信。</p>`;
+  else if (nDense <= 1) d += `<p class="sr-dim">小说腔不多，但<b>真事感也薄</b>。建议加两个具体物：一个金额、一个时间点、一个能看到的物件，任选。</p>`;
+  else d += `<p class="sr-red">每 300 字有 ${nDense.toFixed(1)} 处小说腔。这个密度下，读者读到第三句就开始「这是编的」了 —— 知乎最怕的就是这个。</p>`;
+  o.push(srItem(1, '1-D', '可信感检查', nDense <= 1 && r.realHits.length >= 2 ? 'good' : nDense > 3 || !r.realHits.length ? 'bad' : 'warn', d));
+
+  /* ── 1-E ── */
+  let e = `<p>导语最后一句：</p><p class="sr-snip">${srQ(r.leadLast)}</p>`;
+  if (r.leadEndT === 1) e += `<p class="sr-green"><b>是悬置式收尾。</b>停在这里读者会想「然后呢」，这是对的写法 —— 别往后补解释了。</p>`;
+  else if (r.leadEndT === 2) e += `<p class="sr-dim">是回收式收尾，句子收得住，但它<b>把话说完了</b>。回收式适合放在小节末尾，不适合放在导语末尾。</p>`;
+  else e += `<p class="sr-red"><b>平收。</b>最后一句只是把前面的话说完，没有往上抬。改法：删掉这一句，或者换成一句反问。</p>`;
+  o.push(srItem(1, '1-E', '导语结尾', r.leadEndScore >= 8 ? 'good' : r.leadEndScore >= 6 ? 'mid' : 'warn', e));
+
+  return o.join('');
 }
 
-function diagnose(r) {
+function srBodyCheck(r) {
   const o = [];
 
-  // 钩子
-  if (r.hook.score >= 76) o.push(['good', '开篇信号充足，冲突/悬念/反常至少踩中两样，可以对标成稿的钩子写法。']);
-  else if (r.hook.score >= 50) o.push(['mid', '开篇有信号但不集中。短篇前 300 字内就该让人知道「出事了」，可以再压一版开头。']);
-  else o.push(['bad', '开篇偏平，没有冲突、悬念、反常中的任何一项。读者极可能在这里划走，建议直接砍掉前两段从事件写起。']);
+  /* ── 2-A ── */
+  let a = `<p>全文按 ${r.sections.length} ${r.headed ? '节' : '块'} 切，每节主导功能：</p><div class="sr-secs">`;
+  r.sections.forEach((s, i) => {
+    a += `<div class="sr-sec-row"><span class="sr-sec-n">${i + 1}</span>
+      <div class="sr-sec-b"><b>${esc(s.title || '（无标题）')}</b><span>${s.n} 字</span></div>
+      <span class="sr-sec-f f-${s.main === '杂糅' ? 'mix' : s.main}">${s.main}</span>
+      <em>${s.focus}%</em></div>`;
+  });
+  a += `</div>`;
+  if (r.dupSec.length) {
+    a += `<p class="sr-red">连续两节功能相同：${r.dupSec.map(x => `「${esc(x.a)}」→「${esc(x.b)}」都是${x.kind}`).join('；')}。<b>读者会觉得在原地打转</b> —— 一节只该干一件事，连着两节干同一件事就等于一节。</p>`;
+  } else if (!r.headed) {
+    a += `<p class="sr-dim">原文没有小标题，是按字数粗切的，功能判断只能看走向。<b>建议加小节标题</b>：盐选的分节本身就是节奏器，读者靠它决定要不要继续。</p>`;
+  } else {
+    a += `<p class="sr-green">没有连续两节功能撞车，节拍在推进。</p>`;
+  }
+  o.push(srItem(2, '2-A', '章节功能检查', r.dupSec.length ? 'bad' : r.headed ? 'good' : 'mid', a));
 
-  // 句长
-  if (r.avg > 34) o.push(['warn', `平均句长 ${r.avg} 字，偏长。碎片化阅读下超过 35 字容易断注意力，试试把长句拆成一长一短。`]);
-  else if (r.avg < 13) o.push(['warn', `平均句长 ${r.avg} 字，偏碎。短句能提速，但连续太多会失去承载力，注意穿插长句换气。`]);
-  else o.push(['good', `平均句长 ${r.avg} 字，读起来负担正常。`]);
+  /* ── 2-B ── */
+  let b = `<p>全文 ${r.chars.toLocaleString()} 字，<b>有效字数 ${r.effectiveChars.toLocaleString()} 字</b>（含水 ${r.waterChars} 字，占 ${r.chars ? Math.round(r.waterChars / r.chars * 100) : 0}%）。</p>`;
+  if (r.waterParas.length) {
+    b += `<div class="sr-water">${r.waterParas.slice(0, 5).map(x => `
+      <div class="sr-water-row"><span class="sr-water-n">第 ${x.i + 1} 段</span>
+        <span class="sr-water-t">${esc(x.p.slice(0, 48))}…</span>
+        <em>${x.n} 字</em></div>`).join('')}</div>`;
+    b += `<p class="sr-red">这几段<b>没有动作、没有新信息、没有情绪</b>，只是把前面说过的话换个说法。知乎允许慢，但<b>不允许空</b>。慢是有东西在累积，空是「一句话说完还在说」。直接删，或者往里面塞一个具体动作。</p>`;
+  } else {
+    b += `<p class="sr-green">没找到明显空转的段落 —— 每一段都在给新东西。</p>`;
+  }
+  if (r.chars < 800) b += `<p class="sr-dim">全文不足 800 字，2-A / 2-B 的结论参考价值有限，重心应该全放在导语上。</p>`;
+  o.push(srItem(2, '2-B', '节奏与水分', r.waterParas.length >= 3 ? 'bad' : r.waterParas.length ? 'warn' : 'good', b));
 
-  // 对话
-  if (r.dRate > 55) o.push(['warn', `对话占比 ${r.dRate}%，偏高。几乎全是说话，场景和心理被挤掉了，读者会不知道人在哪。`]);
-  else if (r.dRate < 15) o.push(['warn', `对话占比只有 ${r.dRate}%，基本是叙述。人物关系推进偏慢，加几句交锋会活起来。`]);
-  else if (r.dRate > 45) o.push(['mid', `对话占比 ${r.dRate}%，略多。检查一下是不是每段都在说话，中间缺了停顿。`]);
-  else o.push(['good', `对话占比 ${r.dRate}%，叙述与对白配比合适。`]);
+  /* ── 2-C ── */
+  const p = r.people;
+  let c = '';
+  if (!p.all.length) {
+    c = `<p class="sr-red">没识别出反复出现的人物。如果不是通篇只写「我」，那说明<b>对面那个人是虚的</b> —— 读者恨不起来，也记不住。</p>`;
+  } else {
+    c = `<div class="sr-people">${p.all.map((x, i) => `<span class="sr-person${i < 4 ? ' lead' : ''}">${esc(x.name)}<i>${x.n}</i></span>`).join('')}</div>`;
+    if (p.lead.length) {
+      c += `<p>主线人物 ${p.lead.length} 个：${p.lead.map(x => `<b>${esc(x.name)}</b>`).join('、')}。</p>`;
+    }
+    if (p.lead.length > 4) c += `<p class="sr-red">主线人物超过 4 个。短篇里读者能记住的名字上限差不多就是 3–4 个，<b>多出来的要么合并要么降级成称谓</b>（「那个中介」「前台姑娘」），别给名字。</p>`;
+    else if (p.lead.length <= 2 && r.chars > 3000) c += `<p class="sr-dim">主线人物只有 ${p.lead.length} 个，对 ${r.chars} 字来说偏少。如果不是故意的独角戏，加一个「制造阻力的人」会让冲突有出口。</p>`;
+    else c += `<p class="sr-green">人物数量合适，主次分得开。</p>`;
+    if (p.onlyTitle >= 3) c += `<p class="sr-dim">配角基本靠称谓出现（婆婆 / 领导 / 中介），这是对的 —— <b>配角不需要名字，只需要一个能让人恨或怕的动作</b>。</p>`;
+  }
+  o.push(srItem(2, '2-C', '人物可信度', !p.all.length ? 'bad' : p.lead.length > 4 ? 'warn' : 'good', c));
 
-  // 节奏
-  if (r.flat.length >= 2) o.push(['bad', `有 ${r.flat.length} 处连续多段的低强度区，总长约 ${r.flat.reduce((a, f) => a + f.wc, 0)} 字。这些地方最容易掉读者，考虑压缩或加一个小反转。`]);
-  else if (r.flat.length === 1) o.push(['mid', `第 ${r.flat[0].from}–${r.flat[0].to} 段（${r.flat[0].wc} 字）强度偏低，可以看下这段是不是必要的铺垫。`]);
-  else o.push(['good', '情绪曲线没有明显塌陷，节奏是撑得住的。']);
+  /* ── 2-D ── */
+  const CW = 100, CH = 40;
+  const d = srCurvePath(r.curve, CW, CH);
+  const area = d ? `${d} L${CW},${CH} L0,${CH} Z` : '';
+  const holeBands = r.holes.map(h => {
+    const x1 = (h.from - 1) / Math.max(1, r.curve.length - 1) * CW;
+    const x2 = (h.to - 1) / Math.max(1, r.curve.length - 1) * CW;
+    return `<rect x="${x1.toFixed(1)}" y="0" width="${Math.max(2, x2 - x1).toFixed(1)}" height="${CH}" fill="var(--sys-orange)" opacity=".16"/>`;
+  }).join('');
+  let dd = `<div class="sr-curve"><svg viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none">
+      ${holeBands}
+      <path d="${d}" fill="none" stroke="var(--sys-pink)" stroke-width="1.2" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      ${area ? `<path d="${area}" fill="var(--sys-pink)" opacity=".08"/>` : ''}
+    </svg><div class="sr-curve-x"><span>开头</span><span>付费卡点</span><span>结尾</span></div></div>`;
+  if (r.overdraft) {
+    dd += `<p class="sr-red"><b>早期情绪透支：</b>前 30% 就出现 ${r.headPeaks} 个峰值，后面最高只到 ${r.tailMax}。<br>开头把情绪写满，后面<b>没法升级了</b> —— 读者会觉得「后面没前面好看」，然后走。改法：把开头的第二个高潮往后挪，中段留一个相对平的段落做铺垫。</p>`;
+  } else if (r.holes.length) {
+    dd += `<p class="sr-red">${r.holes.length} 处连续低强度区（橙带），共 ${r.holes.reduce((a, h) => a + h.wc, 0)} 字：${r.holes.map(h => `第 ${h.from}–${h.to} 段`).join('，')}。<br>这些地方最容易掉读者。不需要加高潮，<b>哪怕塞一句对话就能把线抬起来</b>。</p>`;
+  } else {
+    dd += `<p class="sr-green">情绪曲线没有大塌陷，也没有提前透支。线是往上走的。</p>`;
+  }
+  if (r.curve.length < 4) dd += `<p class="sr-dim">段落太少（${r.curve.length} 段），曲线的判断力有限。</p>`;
+  o.push(srItem(2, '2-D', '情绪曲线', r.overdraft || r.holes.length >= 2 ? 'bad' : r.holes.length ? 'warn' : 'good', dd));
 
-  // 长段
-  if (r.longParas.length) o.push(['mid', `有 ${r.longParas.length} 段明显偏长（最长 ${Math.max(...r.longParas.map(p => p.n))} 字）。手机上一屏显示不下，建议在段中找一处对话或动作切断。`]);
+  return o.join('');
+}
 
-  // 体量（知乎盐选短篇常见 3000–15000 字）
-  if (r.chars < 800) o.push(['mid', `全文 ${r.chars} 字，比一般短篇短很多。这个体量没有铺垫空间，钩子必须在 100 字内落地。`]);
-  else if (r.chars > 18000) o.push(['mid', `全文 ${r.chars} 字，体量偏大。检查一下中段有没有可以并入副线的部分。`]);
+function srHardCheck(r) {
+  const o = [];
 
-  // 重复
-  const top = r.kw[0];
-  if (top && top.n >= 6) o.push(['warn', `「${top.w}」出现 ${top.n} 次，密度偏高，容易让读者觉得作者词汇不够。可以换几种说法。`]);
+  /* ── 3-A ── */
+  let a = `<p>按${r.headed ? `第 ${r.cutIdx + 1} 节末` : `全文 30% 处（第 ${r.cutIdx} 段）`}估算付费卡点，卡点之前的悬置句：</p>`;
+  if (r.cutHasHook) {
+    a += `<div class="sr-hooks">${r.cutHook.map(x => `<div class="sr-hook">${esc(x)}</div>`).join('')}</div>`;
+    a += `<p class="sr-green">有钩子。<b>但要看钩子的位置</b> —— 如果它出现在卡点前最后 200 字，那是好位置；如果出现在第一节，到卡点早凉了。</p>`;
+  } else {
+    a += `<p class="sr-red"><b>卡点前没有钩子。</b>读者读到这里，没有任何「我必须知道答案」的理由 —— 他会直接退出，而不是付费。<br>这是付费转化最贵的一处漏洞，比导语写不好还亏，因为前面的字已经花掉了。</p>`;
+  }
+  o.push(srItem(3, '3-A', '付费卡点前有没有钩子', r.cutHasHook ? 'good' : 'bad', a));
 
-  return o.map(([lv, txt]) => `<div class="an-diag-item lv-${lv}"><span></span><div>${esc(txt)}</div></div>`).join('');
+  /* ── 3-B ── */
+  let b = '';
+  if (!r.promised.length) {
+    b = `<p class="sr-dim">导语里没有出现明确的题材承诺词（离婚 / 出轨 / 复仇 / 身世…）。这既不是坏事也不是好事 —— 说明你这篇靠的是<b>处境</b>而不是<b>标签</b>，那导语就必须自己把调子给准。</p>`;
+    b += `<p>现在导语给的调子：${srQ(r.lead.slice(0, 40))}…</p>`;
+  } else {
+    b = `<p>导语承诺了：${r.promised.map(w => `<span class="sr-tag mid">${esc(w)}</span>`).join('')}</p>`;
+    b += `<div class="sr-pay">${r.payoffs.map(x => `
+      <div class="sr-pay-row ${x.onlyLead ? 'miss' : x.paraIdx >= 0 ? (x.early ? 'on' : 'late') : 'miss'}">
+        <span>${esc(x.w)}<i>${x.total} 次</i></span>
+        <em>${x.onlyLead ? '只在导语提过一次，正文没兑现' : x.paraIdx < 0 ? '正文里找不到' : x.early ? `第 ${x.paraIdx + 1} 段兑现` : `拖到第 ${x.paraIdx + 1} 段才兑现`}</em>
+      </div>`).join('')}</div>`;
+    if (r.delayed.length) {
+      const onlyLead = r.delayed.filter(x => x.onlyLead);
+      if (onlyLead.length) {
+        b += `<p class="sr-red"><b>${onlyLead.map(x => `「${x.w}」`).join('、')} 只在导语出现了一次，正文里再也没提。</b><br>这是最常见的坑：用一个强词把人骗进来，然后写别的事。读者是冲着这个词点开的，你后面不给，他就觉得被骗了 —— 比导语平淡更伤。<br>要么让这件事<b>真的发生</b>，要么把它从导语里换掉。</p>`;
+      } else {
+        b += `<p class="sr-red"><b>${r.delayed.map(x => `「${x.w}」`).join('、')} </b>承诺得太晚。读者是冲着这个词点进来的，你让他等太久，他就去找下一篇了。<br>盐选的容错大概是<b>前三节内</b>必须让承诺的词真的发生。</p>`;
+      }
+    } else {
+      b += `<p class="sr-green">导语承诺的每一件都兑现了，而且兑现得早。这一项很关键，很多人挂在上面。</p>`;
+    }
+  }
+  o.push(srItem(3, '3-B', '标题与导语的一致性', !r.promised.length ? 'mid' : r.delayed.length ? 'bad' : 'good', b));
+
+  /* ── 3-C ── */
+  let c = `<p>结尾最后一句：</p><p class="sr-snip">${srQ(r.lastSent)}</p>`;
+  if (r.endScore >= 8) c += `<p class="sr-green">收得住，而且<b>留了口子</b> —— 这种结尾会有人写「所以后来呢」，评论区就活了。</p>`;
+  else if (r.endScore >= 6) c += `<p class="sr-dim">收得住，但<b>没什么可讨论的</b>。可讨论度来自「读者想站队」或「读者想知道后续」 —— 现在两样都不太够。</p>`;
+  else c += `<p class="sr-red"><b>结尾是平的。</b>既没留悬置，也没留情绪余温。知乎的尾部流量很大一部分来自评论区，结尾不给话题，等于放弃这块。</p>`;
+  o.push(srItem(3, '3-C', '结尾可讨论度', r.endScore >= 8 ? 'good' : r.endScore >= 6 ? 'mid' : 'warn', c));
+
+  return o.join('');
+}
+
+/* ---------- 4-B 优先修改清单：只列 3 条，每条给可直接替换的句子 ---------- */
+function srFixList(r) {
+  const cands = [];
+
+  const q = (k, t, d, before, after) => cands.push({ k, t, d, before, after });
+
+  /* 第一句 */
+  const f = r.first;
+  if (f.stop < 8) {
+    const firstLine = srSplitSents(f.text)[0] || f.text;
+    // 兜底句必须是从原文里取出来的、语法上说得通的句子。
+    // 做法：找导语里最像「事件」的那一句，把它前置成结果，再接一句悬置。
+    const evt = (r.lead.match(/[^。！？\n]{6,34}(?:才知道|才发现|才明白|告诉我|跟我说|看见|看到|收到|接到)[^。！？\n]{0,20}/) || [])[0];
+    const objBit = (r.lead.match(/(合同|协议|请柬|手机|截图|录音|转账|工牌|诊断书|照片|钥匙|流水|账本|房产证)/) || [])[1] || '';
+    const numBit = (r.lead.match(/(\d+|[一二两三四五六七八九十百千]+)\s*(天|年|月|小时|分钟|笔|次|岁|万|块|元)/) || [])[0] || '';
+    let alt;
+    if (evt) {
+      // 已经有一句结果句了，直接把它提到最前面
+      alt = `${evt.replace(/^我(是|在)?/, '我是').replace(/[，,]?\s*$/, '')}。`;
+      if (alt.length < 10) alt = evt + '。';
+    } else if (numBit && objBit) {
+      alt = `${numBit}之后我才知道，那个${objBit}上写的不是我的名字。`;
+    } else if (objBit) {
+      alt = `我把${objBit}翻到最后一页，才看见那个签名。`;
+    } else {
+      alt = `那件事发生之后，我再没回过那个家。`;
+    }
+    q('open', '换掉第一句', `现在是「${f.kind.name}」，停手指 ${f.stop}/10。换成结果先行或反常动作，六种开场里这两种抓力最高 —— 核心是「先给后果，把原因藏起来」。`, firstLine.slice(0, 40), alt);
+  }
+
+  /* 三要素缺项 */
+  const miss = r.threeEl.filter(e => !e.ok);
+  if (miss.length) {
+    const m = miss[0];
+    // 从原文捞素材，别给一句和稿件无关的通用句
+    const obj = (r.lead.match(/(合同|协议|请柬|手机|截图|录音|转账|工牌|诊断书|照片|钥匙|流水|账本|房产证|户口本)/) || [])[1] || '';
+    const who = (r.lead.match(/(他|她|我妈|我爸|婆婆|领导|老板|小姑子|前夫|男友)/) || [])[1] || '他';
+    let add;
+    if (m.key === 'id') {
+      add = obj
+        ? `我在一家小公司做会计，干了六年，那份${obj}是我经手的。`
+        : `我今年三十一，在一家小公司做会计，干了六年。`;
+    } else if (m.key === 'pres') {
+      add = obj
+        ? `${who}把那份${obj}拍在桌上，说这次不许再让。`
+        : `${who}把话撂在这儿，说这次不许我再让一步。`;
+    } else {
+      add = obj
+        ? `我必须在明天之前弄清楚，那份${obj}到底是谁签的字。`
+        : `我必须在明天之前把这件事弄清楚，不然就来不及了。`;
+    }
+    q('three', `补上「${m.name}」`, `三百字里没有这一项，读者不知道${m.key === 'id' ? '你是谁' : m.key === 'pres' ? '你被什么压着' : '你要干什么'}。一句话就够，但必须是具体的。`, '（缺少，建议插在导语第三句后）', add);
+  }
+
+  /* 信息差 */
+  if (r.infoGap === 'report') {
+    // 兜底句必须从原文里取素材，否则会出现「他为什么要坐在那一桌」这种跟稿件无关的句子。
+    const who = (r.lead.match(/(他|她|我妈|我爸|婆婆|领导|老板|小姑子)/) || [])[1] || '他';
+    const thing = (r.lead.match(/(房子|合同|协议|请柬|手机|照片|钥匙|流水|账本|户口本|病历|诊断书|车|卡)/) || [])[1] || '';
+    const gapLine = thing
+      ? `可我一直没想通，${thing}上的那个名字，是什么时候写上去的。`
+      : `可我一直没想通，${who}为什么要在这个时候告诉我。`;
+    q('gap', '加一句悬置', '左边（读者已知）满了，右边（未知）是空的 —— 只报到，不勾人。在导语末尾加一句反问，把口子打开。', r.leadLast.slice(0, 40), gapLine);
+  } else if (r.infoGap === 'vague') {
+    q('gap', '把悬念挂到具体的事上', '有悬念但没事实，读者不知道在悬什么。用一句带具体物件或数字的事实把悬念钉住。', r.known[0] || '（没有具体事实）', `请柬上是我的名字，日子是下个月十六，可新郎那一栏我从来没见过。`);
+  }
+
+  /* 小说腔 */
+  if (r.novelHits.length >= 2) {
+    const top = r.novelHits[0];
+    q('voice', `删掉「${top.name}」`, `${esc(top.why)}。这是导语里出现最多的毛病，改一处，整体可信度就上来一截。`, top.sample, `（直接删掉「${top.sample}」，把后面的动作提到前面）`);
+  }
+
+  /* 导语结尾：兜底句要跟着原文的事走，不能一律写「婚礼」 */
+  if (r.leadEndT === 0) {
+    // 锚点必须是「上面能写字」的东西，否则会拼出「在钥匙上看见那个名字」这种病句。
+    // 能承载字迹的一类：证/书/表/单/记录/合同/协议/请柬/账本…
+    const DOC = /(房产证|产权证|合同|协议|请柬|请帖|流水|账本|户口本|病历|诊断书|工资条|车本|判决书|记录|名单|登记表|截图|照片|短信|备注)/;
+    const HOLD = /(钥匙|手机|车|戒指|包|卡|杯子)/;
+    const docWord = (r.lead.match(DOC) || [])[0]
+      || (r.known.slice(0, 3).join('').match(DOC) || [])[0]
+      || '';
+    const holdWord = (r.lead.match(HOLD) || [])[0] || '';
+    let tail;
+    if (docWord) {
+      tail = `直到那天我在${docWord}上看见那个名字，才知道自己从头到尾都被算在里面。`;
+    } else if (holdWord) {
+      // 拿在手里的东西不能「写字」，换成「摸着它才反应过来」
+      tail = `直到那天我攥着那把${holdWord}，才反应过来自己从头到尾都被算在里面。`;
+    } else {
+      tail = `直到那天我才明白，这件事从一开始就没打算让我知道。`;
+    }
+    q('end', '换掉导语的最后一句', '现在是平收，句子把话说完了，没有往上抬。换成一句「直到…」的转折，把读者钉在下一段。', r.leadLast.slice(0, 40), tail);
+  }
+
+  /* 水分 */
+  if (r.waterParas.length >= 2) {
+    const w = r.waterParas[0];
+    q('water', '删掉空转的段落', `第 ${w.i + 1} 段 ${w.n} 字没有动作、没有新信息、没有情绪。一句话说完还在说，就是空。`, w.p.slice(0, 44) + '…', '（整段删除，直接接下一段）');
+  }
+
+  /* 情绪透支 */
+  if (r.overdraft) {
+    q('over', '把开头的第二个高潮往后挪', '前 30% 就有两个峰值，后面接不上。开头留一个就够，第二个放到第二节末，读者才有得爬。', '（前 30% 的第二个高强段落）', '（与此处交换位置：把中段一段相对平的铺垫移到前面）');
+  }
+
+  /* 卡点钩子 */
+  if (!r.cutHasHook) {
+    q('cut', '在卡点前下钩子', '这是最贵的漏洞：读者读到卡点没有任何「必须知道答案」的理由，直接退出。在卡点前 200 字内埋一句悬置。', `（第 ${r.cutIdx} 段附近，当前无悬置）`, `她说完那句就走了。我当时没听懂，直到三天后警察上门。`);
+  }
+
+  /* 结尾 */
+  if (r.endScore < 6) {
+    q('last', '换结尾', '结尾是平的，没有留话题。可讨论度来自「读者想站队」或「想知道后续」。', r.lastSent.slice(0, 40), `后来我再没见过他。只是每年清明，那束花都有人替我送过。`);
+  }
+
+  /* 排序：先导语（最高优先级），再卡点，再正文 */
+  const ORDER = { open: 0, three: 1, gap: 2, voice: 3, end: 4, cut: 5, over: 6, water: 7, last: 8 };
+  cands.sort((a, b2) => ORDER[a.k] - ORDER[b2.k]);
+  return cands.slice(0, 3);
+}
+
+function srVerdict(r, fix) {
+  const s = r.score;
+  const avg = (s.lead * 2 + s.read + s.pay * 1.5) / 4.5;
+
+  // 不要硬说「先改 1-A」—— 如果第一句本来就是 9 分，那句话就是在瞎指。
+  // 找出真正没过关的项，用它们的编号说话。
+  const CODE = { open: '1-A', three: '1-B', gap: '1-C', voice: '1-D', end: '1-E',
+    cut: '3-A', over: '2-D', water: '2-B', last: '3-C' };
+  const weak = [];
+  if (r.first.stop < 8 && !r.first.dlgStrong) weak.push('1-A');
+  if (r.threeScore < 3) weak.push('1-B');
+  if (r.infoGap !== 'good') weak.push('1-C');
+  if (r.novelDensity > 1) weak.push('1-D');
+  if (r.leadEndT === 0) weak.push('1-E');
+  if (!r.cutHasHook) weak.push('3-A');
+  if (r.endScore < 8) weak.push('3-C');
+  const leadWeak = weak.filter(x => x.startsWith('1-'));
+  const firstFix = fix[0];
+  const pointer = firstFix ? `先动 4-B 第一条（${firstFix.t}）` : '';
+
+  if (avg >= 8) return '能发。别自我怀疑了，把 4-B 那三条改完就送去投。';
+
+  if (avg >= 6.5) {
+    // 导语分高、失分全在正文/卡点 —— 这稿的导语已经可以了，别让它去改导语
+    if (s.lead >= 8) {
+      return `导语这一关是过的（导语 ${s.lead}/10），不用再动 —— 再改容易改坏。真正掉分的是${weak.length ? ' ' + weak.join('、') + ' ' : '正文和卡点'}。${pointer}，其余别动。`;
+    }
+    if (leadWeak.length === 0) {
+      return `导语没有明显硬伤，但整体还不够利。先动 ${weak[0] || '3-A'}。${pointer}，改完再读一遍，剩下的问题你自己会看出来。`;
+    }
+    return `底子在，先改 ${leadWeak.slice(0, 2).join(' 和 ')}。${pointer}，改完再读一遍，剩下的问题你自己会看出来。`;
+  }
+
+  if (avg >= 5) return '这篇不能直接投。不是写得差，是开头没接住 —— 先把第一句和三百字重写，正文暂时别动。';
+  if (avg >= 3.5) return '结构有，可信感没有。读者看完三百字会觉得「这是编的」，然后走。问题不在文笔，在有没有具体的东西。';
+  return '这篇现在是一个练习稿，不是投稿稿。别改字了，先想清楚：谁在扛什么事，扛不住会怎样。想清楚了重写导语。';
+}
+
+function renderReview(box, r) {
+  const s = r.score;
+  const fix = srFixList(r);
+  const total = Math.round((s.lead * 2 + s.read + s.pay * 1.5) / 4.5 * 10) / 10;
+
+  box.innerHTML = `
+    ${r.isLeadOnly ? '<div class="sr-warn">全文不足 800 字，只能当导语审。正文相关的 2、3 两项参考价值有限。</div>' : ''}
+
+    <div class="sr-score">
+      <div class="sr-score-main">
+        <div class="sr-score-l">综合</div>
+        <div class="sr-score-v lv-${srLv(total)}">${total.toFixed(1)}</div>
+        <div class="sr-score-d">导语权重 ×2 · 卡点 ×1.5</div>
+      </div>
+      <div class="sr-score-3">
+        <div class="sr-s3 lv-${srLv(s.lead)}"><span>导语</span><b>${s.lead}</b><div class="sr-s3-bar"><i style="width:${s.lead * 10}%"></i></div><em>决定点击</em></div>
+        <div class="sr-s3 lv-${srLv(s.read)}"><span>正文</span><b>${s.read}</b><div class="sr-s3-bar"><i style="width:${s.read * 10}%"></i></div><em>决定完读</em></div>
+        <div class="sr-s3 lv-${srLv(s.pay)}"><span>卡点</span><b>${s.pay}</b><div class="sr-s3-bar"><i style="width:${s.pay * 10}%"></i></div><em>决定付费</em></div>
+      </div>
+    </div>
+
+    <div class="sr-step-h"><span>第一步</span>导语审查<em>前 ${r.leadChars} 字 · 决定点击率</em></div>
+    ${srLeadCheck(r)}
+
+    <div class="sr-step-h"><span>第二步</span>正文审查<em>决定完读率</em></div>
+    ${srBodyCheck(r)}
+
+    <div class="sr-step-h"><span>第三步</span>三个硬指标<em>决定付费与扩散</em></div>
+    ${srHardCheck(r)}
+
+    <div class="sr-step-h"><span>第四步</span>总评与修改清单<em>只列 3 条，按优先级</em></div>
+
+    <div class="sr-fix">
+      ${fix.map((x, i) => `
+        <div class="sr-fix-item">
+          <div class="sr-fix-n">${i + 1}</div>
+          <div class="sr-fix-b">
+            <div class="sr-fix-t">${esc(x.t)}</div>
+            <div class="sr-fix-d">${x.d}</div>
+            <div class="sr-fix-ba">
+              <div class="sr-fix-before"><span>原句</span><div>${esc(x.before)}</div></div>
+              <div class="sr-fix-after"><span>换成</span><div>${esc(x.after)}</div></div>
+            </div>
+          </div>
+        </div>`).join('')}
+      ${!fix.length ? '<div class="sr-green" style="padding:14px 0">没有需要改的地方 —— 这篇在规则范围内挑不出硬伤。剩下的只能靠人读了。</div>' : ''}
+    </div>
+
+    <div class="sr-verdict">
+      <div class="sr-verdict-l">一句话总评</div>
+      <div class="sr-verdict-t">${esc(srVerdict(r, fix))}</div>
+    </div>
+
+    <div class="sr-foot">本地规则审查 · 判断依据是知乎盐选的编辑标准，不联网、不上传。批评是给稿子的，不是给你的。</div>`;
 }
 
 /* ================= 7. 数据设置 ================= */
