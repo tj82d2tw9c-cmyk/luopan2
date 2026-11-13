@@ -227,22 +227,22 @@ s('草地', .15,.85,.88,.94)
 }
 ```
 
-**2. Dock 占位不能用 `.desktop` 的 `padding-bottom`**
+**2. 固定覆盖层的占位不能加在 `.desktop` 上**
 
-Dock 是 `position: fixed` 覆盖层。给 `.desktop` 加 `padding-bottom` 会被 flex 子项的实际高度吃掉（实测 `scrollHeight` 完全不变）。正确做法是加在最后一个子项 `.appgrid-wrap` 上。
+凡是 `position: fixed` 的底部浮层（历史遗留的 Dock 就是），给 `.desktop` 加 `padding-bottom` 会被 flex 子项的实际高度吃掉（实测 `scrollHeight` 完全不变）。占位必须加在最后一个子项 `.appgrid-wrap` 上。
 
-**3. Dock 图标必须按视口宽度算尺寸**
+**3. 手机端已移除 Dock**
 
-7 个图标固定 50px + 12px 间距 = 内宽约 458px，**所有手机宽度都会溢出**（320px 溢出 152px，连 430px 宽屏机也差 42px）。而且溢出后 `left:50% + translateX(-50%)` 的居中也会跑偏。改用 `clamp()`：
+早期 Dock 在手机上要挤 7 个图标：固定 50px + 12px 间距 = 内宽约 458px，**所有手机宽度都会溢出**（320px 溢出 152px，连 430px 宽屏机也差 42px），后来用 `clamp()` 按视口算尺寸勉强塞下，但图标被压到 32~47px，和主网格的 58px 图标视觉割裂，且 8 个入口在主网格里全都有一份，Dock 纯属重复。
 
-```css
-.dock .app-ico {
-  width: clamp(32px, calc((100vw - 76px) / 7), 50px);
-  height: clamp(32px, calc((100vw - 76px) / 7), 50px);
-}
-```
+现在**整个 `.dock` 已删除**（HTML 结构与相关 CSS 全部清掉），入口只保留主网格 `4×2` 一种布局。随之调整：
 
-`76px` = 两侧留白 16 + 内边距 20 + 6 个间隙（约 40）。320px 算出 32px（下限），430px 约 47px，全程不溢出且始终居中。验证脚本：`scripts/audit-dock.js`（遍历 320~430 六个宽度，输出 Dock 宽/需要宽/溢出/左右边距）。
+| 项 | 含 Dock 时 | 现在 |
+|---|---|---|
+| `.appgrid-wrap` 底部占位 | `112px`（给 fixed Dock 让位） | `28px + safe-area` |
+| 图标尺寸 | 58px | 62px |
+| 列距 / 行距 | 10px / 24px | 14px / 26px |
+| 图标字号 | 10.5px | 11px |
 
 **4. 表单行和海报不能固定宽度**
 
