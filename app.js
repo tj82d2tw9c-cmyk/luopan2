@@ -284,7 +284,7 @@ function paintWidgets() {
 /* ================= 窗口框架 ================= */
 const TITLES = {
   rank: '短篇榜单', cards: '随机抽卡', pool: '导语池', studio: '制图工坊',
-  names: '起名助手', analyze: '审稿官', settings: '数据设置',
+  names: '起名助手', tear: '拆文台', analyze: '审稿官', settings: '数据设置',
 };
 
 const VIEWS = {};
@@ -292,14 +292,22 @@ let curView = '';
 
 function openApp(key) {
   curView = key;
-  $('#winTitle').textContent = TITLES[key] || '罗盘';
+  const v = VIEWS[key];
+  // 标题查不到不要静默退成「罗盘」—— 上一版加了拆文台却忘了在 TITLES 里登记，
+  // 结果窗口标题一直显示「罗盘」，看上去像是没实现，其实是漏了一个 key。
+  $('#winTitle').textContent = TITLES[key] || (v ? '罗盘' : '罗盘（未知页面）');
   $('#winActions').innerHTML = '';
   const body = $('#winBody');
   body.innerHTML = '';
   body.scrollTop = 0;
-  const v = VIEWS[key];
-  if (!v) { body.innerHTML = '<div class="empty"><div class="empty-t">尚未实现</div></div>'; }
-  else body.appendChild(v());
+  if (!v) {
+    // 把 key 打出来，方便一眼看出是路由写错还是视图没注册
+    body.innerHTML = `<div class="empty"><div class="empty-t">尚未实现</div>`
+      + `<div class="empty-d">没有找到名为「${esc(key)}」的页面</div></div>`;
+    if (window.console) console.warn('[openApp] 未注册的视图 key:', key, '已注册:', Object.keys(VIEWS).join(','));
+  } else {
+    body.appendChild(v());
+  }
   $('#stage').classList.add('show');
   document.body.classList.add('win-open');
 }

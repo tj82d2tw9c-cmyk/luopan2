@@ -338,35 +338,12 @@ body { display: flex; flex-direction: column; }
 .ico-analyze{ background: linear-gradient(152deg, #D2C9B4, #AEA48C 54%, #8A806B); }   /* 树干 */
 .ico-settings{ background: linear-gradient(152deg, #D8D4CB, #B4AFA4 54%, #928D82); }  /* 灰石 */
 
-/* ============ Dock ============ */
-.dock {
-  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-  z-index: 30;
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px;
-  border-radius: 24px;
-  background: rgba(250, 249, 243, .52);
-  -webkit-backdrop-filter: blur(34px) saturate(200%);
-  backdrop-filter: blur(34px) saturate(200%);
-  box-shadow: 0 12px 40px -12px rgba(58, 52, 42, .32), inset 0 0 0 .5px rgba(255, 255, 255, .86);
-}
-.dock-app {
-  border: 0; background: transparent; padding: 0; cursor: pointer;
-  transition: transform .2s var(--spring);
-}
-.dock-app .app-ico { width: 46px; height: 46px; border-radius: 13px; box-shadow: 0 3px 8px -2px rgba(58, 52, 42, .32); }
-.dock-app .app-ico svg { width: 23px; height: 23px; }
-.dock-app:hover { transform: translateY(-8px) scale(1.14); }
-.dock-app:active { transform: scale(.94); }
-.dock-sep { width: .5px; height: 34px; background: var(--sep); }
-
 /* 窗口打开时，桌面背景后退 */
-.desktop, .topbar, .dock {
+.desktop, .topbar {
   transition: filter .3s var(--ease), opacity .3s var(--ease), transform .3s var(--ease);
 }
 body.win-open .desktop { filter: blur(9px) saturate(.86); opacity: .58; transform: scale(.985); pointer-events: none; }
 body.win-open .topbar { filter: blur(4px); opacity: .45; }
-body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%) translateY(10px) scale(.96); }
 
 /* ============ 窗口 ============ */
 .stage {
@@ -1293,11 +1270,11 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
   .widget-1x2 { grid-column: auto; }
   /* 手机上 .desktop 是纵向 flex，appgrid-wrap 的 height:100% / 垂直居中 / 右侧偏移全部失效，
      必须复位成自然流 —— 否则图标会被算成"父容器高度"直接压到卡片上。
-     padding-bottom 同时充当 Dock（fixed 覆盖层）的占位：加在 .desktop 上会被 flex 子项实际高度吃掉，实测无效。 */
+     padding-bottom 原来给 fixed 的 Dock 让位（112px），Dock 已移除，改成常规底部留白 + 安全区。 */
   .appgrid-wrap {
     height: auto; min-height: 0;
     flex: 0 0 auto;                       /* 关键：禁止被 flex 压缩，否则 scrollHeight 永远等于 clientHeight，滚不动 */
-    padding: 6px 0 calc(112px + env(safe-area-inset-bottom, 0px));
+    padding: 6px 14px calc(28px + env(safe-area-inset-bottom, 0px));
     align-items: flex-start;
     justify-content: center;
   }
@@ -1311,31 +1288,14 @@ body.win-open .dock { filter: blur(7px); opacity: .5; transform: translateX(-50%
       linear-gradient(to bottom, rgba(255, 253, 247, 0) 52%, rgba(255, 253, 247, .52) 68%, rgba(255, 253, 247, .62) 100%);
   }
   .appgrid { margin-top: 0; }
-  .appgrid { grid-template-columns: repeat(4, 1fr); gap: 24px 10px; max-width: none; }
-  .app-ico { width: 58px; height: 58px; border-radius: 16px; }
-  .app { font-size: 10.5px; gap: 7px; }
-  .app-name { max-width: 76px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 8 个图标 4×2。Dock 去掉后有了余量，行距/列距都放宽，图标也放大一点。 */
+  .appgrid { grid-template-columns: repeat(4, 1fr); gap: 26px 14px; max-width: none; }
+  .app-ico { width: 62px; height: 62px; border-radius: 17px; }
+  .app { font-size: 11px; gap: 8px; }
+  .app-name { max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* Dock
-     手机上 7 个图标必须挤进一屏。原来固定 50px 图标 + 12px 间距 = 内宽约 458px，
-     连 430px 的宽屏机都溢出（320px 溢出 152px），且溢出后 left:50% 居中也会跑偏。
-     改用 clamp 按视口算：每个图标占 (100vw - 两侧留白 - 6 个间隙 - 内边距) / 7。
-     320px 屏算出约 33px，430px 屏约 47px，全程不溢出且始终居中。 */
-  .dock {
-    bottom: 12px;
-    gap: clamp(3px, 1.2vw, 10px);
-    padding: 8px 10px;
-    border-radius: 22px;
-    max-width: calc(100vw - 16px);
-  }
-  .dock-app { flex: 0 1 auto; min-width: 0; }
-  .dock .app-ico {
-    width: clamp(32px, calc((100vw - 76px) / 7), 50px);
-    height: clamp(32px, calc((100vw - 76px) / 7), 50px);
-    border-radius: clamp(9px, 2.6vw, 14px);
-  }
-  .dock .app-ico svg { width: 55%; height: 55%; }
-  .dock-sep { height: clamp(22px, 6vw, 32px); }
+  /* 手机上不再有底部 Dock（8 个图标平铺在网格里已经够用，Dock 重复一份反而挤）。
+     appgrid-wrap 的 padding-bottom 从"给 Dock 让位"的 112px 降到常规留白。 */
 
   /* 窗口：手机上占满 */
   .stage { padding: 0; }
